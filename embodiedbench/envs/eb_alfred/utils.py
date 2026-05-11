@@ -15,6 +15,40 @@ alfred_objs = ['Cart', 'Potato', 'Faucet', 'Ottoman', 'CoffeeMachine', 'Candle',
                 'Laptop', 'RemoteControl', 'BasketBall', 'DishSponge', 'Cup', 'SaltShaker', 'PepperShaker',
                 'Pillow', 'Bathtub', 'SoapBottle', 'Statue', 'Fridge', 'Sink']
 
+all_objects = [
+    # Core interactable objects
+    'AlarmClock', 'AluminumFoil', 'Apple', 'AppleSliced',
+    'ArmChair',
+    'BaseballBat', 'BasketBall', 'Bathtub', 'BathtubBasin',
+    'Bed', 'Blinds', 'Book', 'Boots', 'Bottle', 'Bowl', 'Box', 'Bread', 'BreadSliced',
+    'ButterKnife',
+    'Cabinet', 'Candle', 'CD', 'CellPhone', 'Chair', 'Cloth',
+    'CoffeeMachine', 'CoffeeTable', 'CounterTop', 'CreditCard', 'Cup', 'Curtains',
+    'Desk', 'DeskLamp', 'Desktop', 'DiningTable', 'DishSponge', 'DogBed', 'Drawer',
+    'Dresser', 'Dumbbell',
+    'Egg', 'EggCracked',
+    'Faucet', 'Floor', 'FloorLamp', 'Footstool', 'Fork', 'Fridge',
+    'GarbageBag', 'GarbageCan',
+    'HandTowel', 'HandTowelHolder', 'HousePlant',
+    'Kettle', 'KeyChain', 'Knife',
+    'Ladle', 'Laptop', 'LaundryHamper', 'Lettuce', 'LettuceSliced', 'LightSwitch',
+    'Microwave', 'Mirror', 'Mug',
+    'Newspaper',
+    'Ottoman',
+    'Painting', 'Pan', 'PaperTowelRoll', 'Pen', 'Pencil', 'PepperShaker', 'Pillow',
+    'Plate', 'Plunger', 'Pot', 'Poster', 'Potato', 'PotatoSliced',
+    'RemoteControl', 'RoomDecor',
+    'Safe', 'SaltShaker', 'ScrubBrush', 'Shelf', 'ShelvingUnit',
+    'ShowerCurtain', 'ShowerDoor', 'ShowerGlass', 'ShowerHead', 'SideTable',
+    'Sink', 'SinkBasin', 'SoapBar', 'SoapBottle', 'Sofa', 'Spatula', 'Spoon',
+    'SprayBottle', 'Statue', 'Stool', 'StoveBurner', 'StoveKnob',
+    'TableTopDecor', 'TeddyBear', 'Television', 'TennisRacket', 'TissueBox',
+    'Toaster', 'Toilet', 'ToiletPaper', 'ToiletPaperHanger', 'Tomato', 'TomatoSliced',
+    'Towel', 'TowelHolder', 'TVStand',
+    'VacuumCleaner', 'Vase',
+    'Watch', 'WateringCan', 'Window', 'WineBottle',
+]
+
 alfred_pick_obj = ['KeyChain', 'Potato', 'Pot', 'Pen', 'Candle', 'CD', 'Pan', 'Watch', 'Newspaper', 'HandTowel',
                     'SprayBottle', 'BaseballBat', 'Bread', 'CellPhone', 'Book', 'Lettuce', 'CreditCard', 'Mug',
                     'AlarmClock', 'Kettle', 'ToiletPaper', 'Bowl', 'Fork', 'Box', 'Egg', 'Spoon', 'TissueBox',
@@ -23,17 +57,206 @@ alfred_pick_obj = ['KeyChain', 'Potato', 'Pot', 'Pen', 'Candle', 'CD', 'Pan', 'W
                     'Plate', 'PepperShaker', 'Pillow', 'Glassbottle', 'SoapBottle', 'Knife', 'Statue', 'Tomato',
                     'ButterKnife', 'WateringCan', 'Vase']
 
+pick_obj = [
+    'AlarmClock', 'AluminumFoil',
+    'Apple', 'AppleSliced',
+    'BaseballBat', 'BasketBall', 'Book', 'Boots', 'Bottle', 'Bowl', 'Box', 'Bread', 'BreadSliced',
+    'ButterKnife',
+    'Candle', 'CD', 'CellPhone', 'Cloth', 'CreditCard', 'Cup',
+    'DishSponge', 'Dumbbell',
+    'Egg', 'EggCracked',
+    'Fork',
+    'HandTowel',
+    'Kettle', 'KeyChain', 'Knife',
+    'Ladle', 'Laptop', 'Lettuce', 'LettuceSliced',
+    'Mug',
+    'Newspaper',
+    'Pan', 'PaperTowelRoll', 'Pen', 'Pencil', 'PepperShaker', 'Pillow', 'Plate', 'Plunger',
+    'Pot', 'Potato', 'PotatoSliced',
+    'RemoteControl',
+    'SaltShaker', 'ScrubBrush', 'SoapBar', 'SoapBottle', 'Spatula', 'Spoon',
+    'SprayBottle', 'Statue',
+    'TableTopDecor', 'TeddyBear', 'TennisRacket', 'TissueBox', 'ToiletPaper',
+    'Tomato', 'TomatoSliced', 'Towel',
+    'Vase',
+    'Watch', 'WateringCan', 'WineBottle',
+]
+
 alfred_open_obj = ['Safe', 'Laptop', 'Fridge', 'Box', 'Microwave', 'Cabinet', 'Drawer']
+
+open_obj = [
+    'Blinds', 'Book',
+    'Box',
+    'Cabinet',
+    'Drawer',
+    'Fridge',
+    'Kettle',
+    'Laptop',
+    'Microwave',
+    'Safe',
+    'ShowerCurtain', 'ShowerDoor',
+    'Toilet',
+]
 
 alfred_slice_obj = ['Potato', 'Lettuce', 'Tomato', 'Apple', 'Bread']
 
+slice_obj = [
+    'Apple',
+    'Bread',
+    'Egg',
+    'Lettuce',
+    'Potato',
+    'Tomato',
+]
+
 alfred_toggle_obj = ['Microwave', 'DeskLamp', 'FloorLamp', 'Faucet']
+
+toggle_obj = [
+    'Candle',
+    'CellPhone',
+    'CoffeeMachine',
+    'DeskLamp',
+    'Faucet',
+    'FloorLamp',
+    'LightSwitch',
+    'Laptop',
+    'Microwave',
+    'ShowerHead',
+    'StoveBurner',   # indirectly via StoveKnob
+    'StoveKnob',
+    'Television',
+    'Toaster',
+]
 
 alfred_recep = ['ArmChair', 'Safe', 'Cart', 'Ottoman', 'Pot', 'CoffeeMachine', 'Desk', 'Cabinet', 'Pan',
                 'Drawer', 'Sofa', 'Mug', 'StoveBurner', 'SideTable', 'Toilet', 'Bowl', 'Box', 'DiningTable',
                 'Shelf', 'ToiletPaperHanger', 'CoffeeTable', 'Cup', 'Plate', 'Bathtub', 'Bed', 'Dresser',
                 'Fridge', 'Microwave', 'CounterTop', 'Sink', 'GarbageCan']
 
+recep_obj = [
+    'ArmChair',
+    'BathtubBasin', 'Bathtub',
+    'Bed',
+    'Bowl', 'Box',
+    'Cabinet',
+    'CoffeeMachine',
+    'CoffeeTable',
+    'CounterTop',
+    'Cup',
+    'Desk',
+    'DiningTable',
+    'Drawer',
+    'Dresser',
+    'Fridge',
+    'GarbageCan',
+    'HandTowelHolder',
+    'LaundryHamper',
+    'Microwave',
+    'Mug',
+    'Ottoman',
+    'Pan',
+    'Plate',
+    'Pot',
+    'Safe',
+    'Shelf',
+    'SideTable',
+    'Sink', 'SinkBasin',
+    'Sofa',
+    'StoveBurner',
+    'Toaster',
+    'Toilet',
+    'ToiletPaperHanger',
+    'TowelHolder',
+    'TVStand',
+]
+
+cook_obj = [
+    'BreadSliced',
+    'EggCracked',
+    'Potato',
+    'PotatoSliced',
+]
+
+fill_obj = [
+    'Bottle',
+    'Bowl',
+    'Cup',
+    'HousePlant',
+    'Kettle',
+    'Mug',
+    'Pot',
+    'WateringCan',
+    'WineBottle',
+]
+
+break_obj = [
+    'Bottle',
+    'Bowl',
+    'CellPhone',
+    'Cup',
+    'Egg',
+    'Laptop',
+    'Mirror',
+    'Mug',
+    'Plate',
+    'ShowerDoor',
+    'ShowerGlass',
+    'Statue',
+    'Television',
+    'Vase',
+    'Window',
+    'WineBottle',
+]
+
+dirty_obj = [
+    'Bed',
+    'Bowl',
+    'Cloth',
+    'Cup',
+    'Mirror',
+    'Mug',
+    'Pan',
+    'Plate',
+    'Pot',
+]
+
+usedup_obj = [
+    'PaperTowelRoll',
+    'SoapBottle',   # (some)
+    'TissueBox',    # (some)
+    'ToiletPaper',
+]
+
+moveable_obj = [
+    'ArmChair',
+    'Chair',
+    'CoffeeMachine',
+    'CoffeeTable',
+    'Desk',
+    'DeskLamp',
+    'Desktop',
+    'DiningTable',
+    'DogBed',
+    'Dresser',
+    'FloorLamp',
+    'Footstool',
+    'GarbageBag',
+    'GarbageCan',
+    'HousePlant',
+    'LaundryHamper',
+    'Microwave',
+    'Ottoman',
+    'RoomDecor',
+    'Safe',
+    'ShelvingUnit',
+    'SideTable',
+    'Sofa',
+    'Stool',
+    'Television',
+    'Toaster',
+    'TVStand',
+    'VacuumCleaner',
+]
 
 def random_color():
     return tuple(np.random.choice(range(256), size=3))

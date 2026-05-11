@@ -13,9 +13,11 @@ Dependencies:
 
 import os
 import time
+import glob
 import gym
 import json
 import numpy as np
+import cv2
 from PIL import Image 
 
 # Import custom modules
@@ -384,6 +386,136 @@ class EBAlfEnv(gym.Env):
         img.save(image_path)
         return image_path
 
+    def get_scene_objects(self) -> list:
+        """
+        Return the full object list from the most recent AI2-THOR event.
+
+        The ThorConnector (self.env) stores each API response in its
+        ``last_event`` attribute (inherited from the ai2thor Controller).
+        ``last_event.metadata['objects']`` is a list of dicts, one per
+        scene object, containing fields such as:
+            - objectId   (str)  : unique instance identifier
+            - objectType (str)  : category name, e.g. "Fridge", "Apple"
+            - visible    (bool) : whether the agent can currently see it
+            - isPickedUp (bool), isOpen (bool), isToggled (bool), …
+
+        Returns:
+            list[dict]: object metadata dicts, or [] if no event is available.
+        """
+        try:
+            return self.env.last_event.metadata.get('objects', [])
+        except AttributeError:
+            return []
+
+    def get_inventory_objects(self) -> list:
+        """
+        Return the list of objects currently held by the robot agent.
+
+        AI2-THOR stores held objects in ``last_event.metadata['inventoryObjects']``,
+        a list of dicts with ``objectId``, ``objectType``, etc.
+
+        Returns:
+            list[dict]: held object metadata dicts, or [] if the robot has empty hands.
+        """
+        try:
+            return self.env.last_event.metadata.get('inventoryObjects', [])
+        except AttributeError:
+            return []
+
+    def save_episode_video(self, fps=2):
+        """
+        Stitch saved step images into an MP4 video for the current episode,
+        overlaying the task instruction and per-step action info on each frame.
+
+        Args:
+            fps (int): Frames per second for the output video. Default is 2.
+
+        Returns:
+            str: Path to the saved video file, or None if no images were found.
+        """
+        episode_idx = self._current_episode_num if not len(self.selected_indexes) else self.selected_indexes[self._current_episode_num - 1] + 1
+        image_folder = os.path.join(self.log_path, 'images', f'episode_{episode_idx}')
+        video_folder = os.path.join(self.log_path, 'videos')
+        os.makedirs(video_folder, exist_ok=True)
+        video_path = os.path.join(video_folder, f'episode_{episode_idx}.mp4')
+
+        # Collect and sort images by step number
+        image_files = sorted(
+            glob.glob(os.path.join(image_folder, '*.png')),
+            key=lambda p: int(p.split('_step_')[-1].replace('.png', ''))
+        )
+        if not image_files:
+            logger.warning(f"No images found for episode {episode_idx}, skipping video generation.")
+            return None
+
+        # Build a step->log lookup from episode_log (step index is 1-based)
+        step_log = {entry['env_step']: entry for entry in self.episode_log}
+
+        first_frame = cv2.imread(image_files[0])
+        h, w, _ = first_frame.shape
+        writer = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+
+        font       = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.55
+        thickness  = 1
+        pad        = 8
+        line_h     = 22  # pixels per text line
+
+        def put_text_block(frame, lines, origin_y, bg_color, text_color):
+            """Draw a semi-transparent background box and overlay multiple lines of text."""
+            block_h = len(lines) * line_h + pad * 2
+            overlay = frame.copy()
+            cv2.rectangle(overlay, (0, origin_y), (w, origin_y + block_h), bg_color, -1)
+            cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
+            for i, line in enumerate(lines):
+                y = origin_y + pad + (i + 1) * line_h - 4
+                cv2.putText(frame, line, (pad, y), font, font_scale, text_color, thickness, cv2.LINE_AA)
+            return origin_y + block_h
+
+        # Wrap long text to fit frame width
+        def wrap_text(text, max_chars=80):
+            words, lines, cur = text.split(), [], ''
+            for w_ in words:
+                if len(cur) + len(w_) + 1 <= max_chars:
+                    cur = (cur + ' ' + w_).strip()
+                else:
+                    if cur:
+                        lines.append(cur)
+                    cur = w_
+            if cur:
+                lines.append(cur)
+            return lines or ['']
+
+        for img_file in image_files:
+            step_num = int(img_file.split('_step_')[-1].replace('.png', ''))
+            frame = cv2.imread(img_file)
+
+            # --- Top banner: task instruction ---
+            instr_lines = wrap_text(f"Task: {self.episode_language_instruction}")
+            put_text_block(frame, instr_lines, 0, (0, 0, 0), (255, 255, 255))
+
+            # --- Bottom banner: step action info ---
+            log = step_log.get(step_num)
+            if log:
+                action_desc = log.get('action_description', '')
+                success     = log.get('last_action_success', 0.0)
+                progress    = log.get('task_progress', 0.0)
+                feedback    = log.get('env_feedback', '')
+                success_str = 'SUCCESS' if success else 'FAILED'
+                color       = (0, 200, 0) if success else (0, 0, 220)
+                bottom_lines = [
+                    f"Step {step_num}: {action_desc}  [{success_str}]",
+                    f"Progress: {progress:.0%}  |  {feedback[:90]}",
+                ]
+                block_h = len(bottom_lines) * line_h + pad * 2
+                put_text_block(frame, bottom_lines, h - block_h, (20, 20, 20), color)
+
+            writer.write(frame)
+
+        writer.release()
+        logger.info(f"Episode {episode_idx} video saved to {video_path}")
+        return video_path
+
     def save_episode_log(self):
         if not os.path.exists(self.log_path):
             os.makedirs(self.log_path)
@@ -396,7 +528,7 @@ class EBAlfEnv(gym.Env):
                     if 'object_states' in item:
                         item.pop('object_states')
                     try:
-                        json.dump(item, f, ensure_ascii=False)
+                        json.dump(item, f, ensure_ascii=False, indent=4)
                     except:
                         import pdb;pdb.set_trace()
                     f.write('\n')  

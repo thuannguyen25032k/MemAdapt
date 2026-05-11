@@ -12,3 +12,5 @@ from .measures import *
 from .predicate_task import RearrangePredicateTask
 from .sensors import *
 from .EBHabEnv import EBHabEnv
+
+__all__ = ["RearrangePredicateTask", "EBHabEnv"]
