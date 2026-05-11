@@ -1,11 +1,36 @@
 ARG CUDA_VERSION
 ARG NVIDIA_VERSION
 
-FROM nvidia/cuda:$CUDA_VERSION-devel-ubuntu18.04
+FROM nvidia/cuda:$CUDA_VERSION-devel-ubuntu20.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends python3-pip libvulkan1 python3-venv vim pciutils wget git kmod vim bzip2 build-essential libffi-dev python3-dev libgtk2.0-dev
+RUN apt-get -o Acquire::Retries=5 update \
+    && apt-get install -y --no-install-recommends software-properties-common \
+    && add-apt-repository -y ppa:ubuntu-toolchain-r/test \
+    && apt-get -o Acquire::Retries=5 update \
+    && apt-get install -y --fix-missing --no-install-recommends \
+        # Build tools
+        python3-pip python3-venv python3-dev \
+        build-essential libffi-dev wget git kmod vim bzip2 pciutils \
+        # Updated libstdc++ — fixes GLIBCXX_3.4.29 error from conda packages
+        libstdc++6 \
+        # OpenGL / Mesa (software fallback + hardware)
+        libgl1-mesa-glx libgl1-mesa-dri libgles2-mesa libglu1-mesa \
+        # GL vendor-neutral dispatch (required by CoppeliaSim Qt5)
+        libglvnd0 libgl1 libglx0 libegl1 \
+        # X11 / display
+        libglib2.0-0 libsm6 libxrender1 libxext6 libx11-6 libdbus-1-3 \
+        # Qt xcb platform plugin dependencies
+        libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
+        libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 \
+        libxcb-cursor0 libxcb-shape0 libxcb-util1 \
+        # Virtual display
+        xvfb x11-utils \
+    && apt-get purge -y software-properties-common \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 
 ENV CONDA_DIR=/opt/conda
@@ -15,95 +40,55 @@ RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86
 
 ENV PATH=${CONDA_DIR}/bin:$PATH
 
-# RUN git clone https://github.com/EmbodiedBench/EmbodiedBench.git /opt/embodiedbench
-# syntax=docker/dockerfile:1.2
-ARG GITHUB_USERNAME=jeremy-chy
-RUN --mount=type=secret,id=github_token \
-    git clone https://${GITHUB_USERNAME}:$(cat /run/secrets/github_token)@github.com/EmbodiedBench/EmbodiedBench.git /opt/embodiedbench
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
 
+COPY . /opt/embodiedbench
 
 WORKDIR /opt/embodiedbench
 
-
-COPY scripts/install_nvidia.sh /app/
+COPY Docker/scripts/install_nvidia.sh /app/
 RUN NVIDIA_VERSION=$NVIDIA_VERSION /app/install_nvidia.sh
 
-############################ 1. Setup Env for EB-Alf and EB-Hab ############################
-
-RUN conda env create -f conda_envs/environment.yaml && conda clean --all -y
-
-RUN conda run -n embench pip install -e .
-
-# 1. Habitat-Sim and Habitat-Lab
-RUN bash -c "source /opt/conda/etc/profile.d/conda.sh && \
-             conda activate embench && \
-             conda install -y habitat-sim==0.3.0 withbullet headless -c conda-forge -c aihabitat"
-             
-RUN bash -c "source /opt/conda/etc/profile.d/conda.sh && \
-             conda activate embench && \
-             git clone -b 'v0.3.0' --depth 1 https://github.com/facebookresearch/habitat-lab.git /root/habitat-lab"
-
-RUN bash -c "source /opt/conda/etc/profile.d/conda.sh && \
-             conda activate embench && \
-             cd /root/habitat-lab && \
-             pip install -e habitat-lab && \
-             pip install -e habitat-baselines && \
-             pip install numpy==1.23.5"
-
-# 2. YCB and ReplicaCAD
-RUN bash -c "source /opt/conda/etc/profile.d/conda.sh && \
-             conda activate embench && \
-             cd /opt/embodiedbench/embodiedbench/envs/eb_habitat && \
-             conda install -y -c conda-forge git-lfs && \
-             python -m habitat_sim.utils.datasets_download --uids rearrange_task_assets"
-
-
-############################ 2. Setup Env for EB-Nav ############################
-
-RUN conda env create -f conda_envs/environment_eb-nav.yaml && conda clean --all -y
-
-RUN conda run -n embench_nav pip install -e .
-
-
-############################ 3. Setup Env for EB-Man ############################
+############################ Setup Env for EB-Man ############################
 
 RUN conda env create -f conda_envs/environment_eb-man.yaml && conda clean --all -y
 
-RUN conda run -n embench_man pip install -e .
+# Make embench_man the default Python env for all subsequent RUN steps and at runtime
+ENV PATH=/opt/conda/envs/embench_man/bin:${PATH}
 
-# 1. CoppeliaSim：download to embodiedbench/envs/eb_manipulation, then unzip and move to /opt/CoppeliaSim
-RUN bash -c "source /opt/conda/etc/profile.d/conda.sh && conda activate embench_man && \
-             cd embodiedbench/envs/eb_manipulation && \
-             wget https://downloads.coppeliarobotics.com/V4_1_0/CoppeliaSim_Pro_V4_1_0_Ubuntu20_04.tar.xz && \
-             tar -xf CoppeliaSim_Pro_V4_1_0_Ubuntu20_04.tar.xz && \
-             rm CoppeliaSim_Pro_V4_1_0_Ubuntu20_04.tar.xz && \
-             mkdir -p /opt/CoppeliaSim && \
-             mv CoppeliaSim_Pro_V4_1_0_Ubuntu20_04 /opt/CoppeliaSim"
+# Fix Qt "XDG_RUNTIME_DIR not set" warning — must exist with mode 0700
+RUN mkdir -p /tmp/runtime-root && chmod 0700 /tmp/runtime-root
+ENV XDG_RUNTIME_DIR=/tmp/runtime-root
 
-# 2. set CoppeliaSim related env variable
+RUN pip install --no-build-isolation -e .
+
+# 1. CoppeliaSim: download to /tmp, unzip, move to /opt/CoppeliaSim
+RUN cd /tmp && \
+    wget https://downloads.coppeliarobotics.com/V4_1_0/CoppeliaSim_Pro_V4_1_0_Ubuntu20_04.tar.xz && \
+    tar -xf CoppeliaSim_Pro_V4_1_0_Ubuntu20_04.tar.xz && \
+    rm CoppeliaSim_Pro_V4_1_0_Ubuntu20_04.tar.xz && \
+    mv /tmp/CoppeliaSim_Pro_V4_1_0_Ubuntu20_04 /opt/CoppeliaSim
+
+# 2. set CoppeliaSim related env variables
 ENV COPPELIASIM_ROOT=/opt/CoppeliaSim
 ENV LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/opt/CoppeliaSim
 ENV QT_QPA_PLATFORM_PLUGIN_PATH=/opt/CoppeliaSim
-ENV DISPLAY=:0
 
-# 3. install PyRep：clone and install PyRep
-RUN bash -c "source /opt/conda/etc/profile.d/conda.sh && conda activate embench_man && \
-             cd embodiedbench/envs/eb_manipulation && \
-             git clone https://github.com/stepjam/PyRep.git && \
-             cd PyRep && \
-             pip install -r requirements.txt && \
-             pip install -e ."
+# 3. install PyRep: clone to /opt/PyRep (outside the volume-mounted workspace)
+RUN git clone https://github.com/stepjam/PyRep.git /opt/PyRep && \
+    cd /opt/PyRep && \
+    pip install --no-build-isolation -r requirements.txt && \
+    rm -f /opt/CoppeliaSim/libcoppeliaSim.so.1 && \
+    pip install --no-build-isolation -e .
 
-# 4. install EB-Manipulation as specified in eb_manipulation
-RUN bash -c "source /opt/conda/etc/profile.d/conda.sh && conda activate embench_man && \
-             cd embodiedbench/envs/eb_manipulation && \
-             pip install -r requirements.txt && \
-             pip install -e ."
+# 4. install EB-Manipulation
+RUN cd /opt/embodiedbench/embodiedbench/envs/eb_manipulation && \
+    pip install --no-build-isolation -r requirements.txt && \
+    pip install --no-build-isolation -e .
 
 # 5. copy simAddOnScript_PyRep.lua to CoppeliaSim's installing directory
-RUN bash -c "source /opt/conda/etc/profile.d/conda.sh && conda activate embench_man && \
-             cd embodiedbench/envs/eb_manipulation && \
-             cp simAddOnScript_PyRep.lua \$COPPELIASIM_ROOT"
-
+RUN cp /opt/embodiedbench/embodiedbench/envs/eb_manipulation/simAddOnScript_PyRep.lua \
+       /opt/CoppeliaSim/
 
 CMD ["/bin/bash"]
