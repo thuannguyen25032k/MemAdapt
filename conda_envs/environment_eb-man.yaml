@@ -239,7 +239,7 @@ dependencies:
       - proto-plus==1.25.0
       - protobuf==5.29.2
       - py-cpuinfo==9.0.0
-      - pyairports==2.1.1
+      - pyairports @ git+https://github.com/NICTA/pyairports.git
       - pyarrow==18.1.0
       - pyasn1==0.6.1
       - pyasn1-modules==0.4.1
