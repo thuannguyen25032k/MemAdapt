@@ -1,0 +1,90 @@
+[
+  {
+    "instruction": "Pick up the alarm clock and turn on the lamp.",
+    "next_action": "action id 98, pick up the AlarmClock",
+    "followup_steps": "  Step 2: action id 63, find a DeskLamp\n  Step 3: action id 151, turn on the DeskLamp",
+    "observation_description": "The robot is standing next to a desk. An AlarmClock is clearly visible on the desk surface. A DeskLamp is also visible in the corner of the desk.",
+    "output": {
+      "valid": true,
+      "reason": "The AlarmClock is directly visible on the desk surface and is within reach. The pick-up action can be executed immediately from the current position.",
+      "suggestions": ""
+    }
+  },
+  {
+    "instruction": "Place a heated slice of tomato in the kitchen sink.",
+    "next_action": "action id 133, put down the object in hand",
+    "followup_steps": "  Step 2: action id 144, close the Microwave\n  Step 3: action id 149, turn on the Microwave\n  Step 4: action id 150, turn off the Microwave\n  Step 5: action id 143, open the Microwave\n  Step 6: action id 35, find a Tomato\n  Step 7: action id 129, pick up the Tomato\n  Step 8: action id 79, find a Sink\n  Step 9: action id 133, put down the object in hand",
+    "observation_description": "The robot's hand is empty. It is standing in front of an open Microwave. A tomato slice is already inside the Microwave.",
+    "output": {
+      "valid": false,
+      "reason": "The robot's hand is currently empty, so 'put down the object in hand' would fail immediately. The current observation shows the tomato is already inside the open Microwave.",
+      "suggestions": "Since the tomato is already inside the open Microwave, skip the put-down step. Close the Microwave, turn it on, turn it off, open it, pick up the heated tomato, find the Sink, and put the tomato down."
+    }
+  },
+  {
+    "instruction": "Move the towel on the hanger into the cabinet.",
+    "next_action": "action id 145, open the Cabinet",
+    "followup_steps": "  Step 2: action id 133, put down the object in hand\n  Step 3: action id 146, close the Cabinet",
+    "observation_description": "The robot is holding a HandTowel and standing in front of a Cabinet that is already open.",
+    "output": {
+      "valid": false,
+      "reason": "The Cabinet is already open in the current observation. Attempting to open an already-open container will fail.",
+      "suggestions": "Remove the 'open the Cabinet' step. The revised plan should skip directly to: put down the object in hand, then close the Cabinet."
+    }
+  },
+  {
+    "instruction": "Put a clean pan in the refrigerator.",
+    "next_action": "action id 78, find a Fridge",
+    "followup_steps": "  Step 2: action id 139, open the Fridge\n  Step 3: action id 133, put down the object in hand\n  Step 4: action id 140, close the Fridge",
+    "observation_description": "The robot is holding a Pan with visible water droplets indicating it has been cleaned. The Fridge is visible in the background.",
+    "output": {
+      "valid": true,
+      "reason": "The robot is holding the cleaned Pan and the Fridge is visible in the scene. Navigating to the Fridge is the correct immediate next step.",
+      "suggestions": ""
+    }
+  },
+  {
+    "instruction": "Turn on the desk lamp and place the book on the shelf.",
+    "next_action": "action id 151, turn on the DeskLamp",
+    "followup_steps": "  Step 2: action id 45, find a Book\n  Step 3: action id 98, pick up the Book\n  Step 4: action id 55, find a Shelf\n  Step 5: action id 133, put down the object in hand",
+    "observation_description": "The robot is facing the DeskLamp. The lamp is clearly already on — its bulb is glowing and light is visibly illuminating the desk surface.",
+    "output": {
+      "valid": false,
+      "reason": "The DeskLamp is already on in the current observation. Attempting 'turn on' an already-on object will fail immediately.",
+      "suggestions": "Skip the 'turn on the DeskLamp' step entirely since the lamp is already on. Proceed directly to finding the Book, picking it up, navigating to the Shelf, and putting it down."
+    }
+  },
+  {
+    "instruction": "Clean the spatula and place it on the counter.",
+    "next_action": "action id 98, pick up the Spatula",
+    "followup_steps": "  Step 2: action id 82, find a Sink\n  Step 3: action id 103, clean the object in hand\n  Step 4: action id 50, find a CounterTop\n  Step 5: action id 133, put down the object in hand",
+    "observation_description": "The robot is clearly holding a Knife in its gripper. A Spatula is visible on the counter nearby.",
+    "output": {
+      "valid": false,
+      "reason": "The robot's hand is currently occupied — it is holding a Knife. A second object cannot be picked up until the hand is empty.",
+      "suggestions": "Before picking up the Spatula, the robot must first put down or drop the Knife. Add a 'put down the object in hand' step at a suitable location (e.g. the counter), then pick up the Spatula and continue with the plan."
+    }
+  },
+  {
+    "instruction": "Take the apple out of the fridge and put it on the table.",
+    "next_action": "action id 146, close the Fridge",
+    "followup_steps": "  Step 2: action id 45, find an Apple\n  Step 3: action id 98, pick up the Apple\n  Step 4: action id 75, find a DiningTable\n  Step 5: action id 133, put down the object in hand",
+    "observation_description": "The robot is standing in front of the Fridge. The Fridge door is clearly closed — the seal is intact and no interior is visible.",
+    "output": {
+      "valid": false,
+      "reason": "The Fridge is already closed in the current observation. Attempting to close an already-closed object will fail.",
+      "suggestions": "Skip the 'close the Fridge' step. The Fridge is already closed, so proceed directly to finding the Apple. Note: the Apple is inside the Fridge, so the Fridge must be opened first — add an 'open the Fridge' step before 'find an Apple'."
+    }
+  },
+  {
+    "instruction": "Place a book into the cabinet.",
+    "next_action": "action id 145, open the Cabinet",
+    "followup_steps": "  Step 2: action id 133, put down the object in hand\n  Step 3: action id 146, close the Cabinet",
+    "observation_description": "The robot is holding a Book. The target Cabinet is visible but a large Box is resting directly against the cabinet door, blocking it from opening.",
+    "output": {
+      "valid": false,
+      "reason": "The Cabinet door is physically blocked by a Box resting against it. The open action will fail as long as the obstruction remains.",
+      "suggestions": "Before opening the Cabinet, navigate to the Box and move it away (pick it up and put it down elsewhere, or push it aside). Once the Cabinet door is clear, open the Cabinet, put the Book inside, then close the Cabinet."
+    }
+  }
+]

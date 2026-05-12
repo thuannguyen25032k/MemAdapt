@@ -191,7 +191,7 @@ Input: {'object 1': [53, 31, 19], 'object 2': [66, 34, 15], 'object 3': [59, 73,
 Output: {
     "visual_state_description": "From left to right, I can see a yellow sponge at [53, 31, 19], a blue rectangle area at [66, 34, 15] and a green rectangle area at [59, 73, 15].",
     "reasoning_and_reflection": "I need to identify which area is vertical first. I can see that the blue rectangle area at [66, 34, 15] is vertical since it is parallel to the red arrow representing the x-axis of the coordinate system annotated in the image. Then, the task is to pick up the sponge at [53, 31, 19] and use it to wipe the vertical area at [66, 34, 15]. The plan involves moving the gripper to the sponge's position, closing the gripper to pick it up, moving to the top side of the vertical area, and moving the sponge along the main direction of the vertical area to wipe it.",
-    "executable_plan": "[[52, 28, 26, 0, 60, 94, 1], [52, 28, 18, 0, 60, 94, 0], [52, 28, 28, 0, 60, 94, 0]], [46, 32, 18, 0, 60, 68, 0], [78, 35, 18, 0, 60, 75, 0]]"
+    "executable_plan": "[[52, 28, 26, 0, 60, 94, 1], [52, 28, 18, 0, 60, 94, 0], [52, 28, 28, 0, 60, 94, 0], [46, 32, 18, 0, 60, 68, 0], [78, 35, 18, 0, 60, 75, 0]]"
 }""",
 """Human Instruction: Wipe the vertical area.
 Input: {'object 1': [37, 26, 15], 'object 2': [57, 49, 15], 'object 3': [56, 73, 18]}
@@ -244,7 +244,7 @@ Output: {
 Input: {'object 1': [53, 31, 19], 'object 2': [66, 34, 15], 'object 3': [59, 73, 15]}
 Output: {
     "reasoning_and_reflection": "I need to identify which area is vertical first. I can see that the blue rectangle area at [66, 34, 15] is vertical since it is parallel to the red arrow representing the x-axis of the coordinate system annotated in the image. Then, the task is to pick up the sponge at [53, 31, 19] and use it to wipe the vertical area at [66, 34, 15]. The plan involves moving the gripper to the sponge's position, closing the gripper to pick it up, moving to the top side of the vertical area, and moving the sponge along the main direction of the vertical area to wipe it.",
-    "executable_plan": "[[52, 28, 26, 0, 60, 94, 1], [52, 28, 18, 0, 60, 94, 0], [52, 28, 28, 0, 60, 94, 0]], [46, 32, 18, 0, 60, 68, 0], [78, 35, 18, 0, 60, 75, 0]]"
+    "executable_plan": "[[52, 28, 26, 0, 60, 94, 1], [52, 28, 18, 0, 60, 94, 0], [52, 28, 28, 0, 60, 94, 0], [46, 32, 18, 0, 60, 68, 0], [78, 35, 18, 0, 60, 75, 0]]"
 }""",
 """Human Instruction: Wipe the vertical area.
 Input: {'object 1': [37, 26, 15], 'object 2': [57, 49, 15], 'object 3': [56, 73, 18]}
@@ -287,7 +287,7 @@ Input: {'object 1': [53, 31, 19], 'object 2': [66, 34, 15], 'object 3': [59, 73,
 Output: {
     "visual_state_description": "From left to right, I can see a yellow sponge at [53, 31, 19], a blue rectangle area at [66, 34, 15] and a green rectangle area at [59, 73, 15].",
     "reasoning_and_reflection": "I need to identify which area is vertical first. I can see that the blue rectangle area at [66, 34, 15] is vertical since it is parallel to the red arrow representing the x-axis of the coordinate system annotated in the image. Then, the task is to pick up the sponge at [53, 31, 19] and use it to wipe the vertical area at [66, 34, 15]. The plan involves moving the gripper to the sponge's position, closing the gripper to pick it up, moving to the top side of the vertical area, and moving the sponge along the main direction of the vertical area to wipe it.",
-    "executable_plan": "[[52, 28, 26, 0, 60, 94, 1], [52, 28, 18, 0, 60, 94, 0], [52, 28, 28, 0, 60, 94, 0]], [46, 32, 18, 0, 60, 68, 0], [78, 35, 18, 0, 60, 75, 0]]"
+    "executable_plan": "[[52, 28, 26, 0, 60, 94, 1], [52, 28, 18, 0, 60, 94, 0], [52, 28, 28, 0, 60, 94, 0], [46, 32, 18, 0, 60, 68, 0], [78, 35, 18, 0, 60, 75, 0]]"
 }""",
 """Human Instruction: Wipe the horizontal area.
 Input: {'object 1': [35, 33, 19], 'object 2': [51, 41, 15], 'object 3': [67, 63, 15]}
