@@ -1,6 +1,6 @@
 # configs/EB-Navigation.yaml
-model_name: gpt-4o-mini
-model_type: remote
+model_name: "OpenGVLab/InternVL2_5-8B"
+model_type: remote  # "remote" means the model is accessed via API calls, as opposed to being loaded locally. This is important for how the planner constructs prompts and interacts with the model.
 down_sample_ratio: 1
 language_only: False
 eval_sets: []
@@ -9,6 +9,14 @@ n_shots: 10
 detection_box: False
 multistep: False
 resolution: 500
-exp_name: baseline
+exp_name: baseline_critic
 env_feedback: True
 tp: 1
+# --- Dual-Critic ---
+use_critic: True           # set to True to enable the dual-critic module
+critic_examples_path: null  # null → uses embodiedbench/evaluator/config/critic_examples.json
+
+# --- Video / logging ---
+video_fps: 2                # frames-per-second for saved episode MP4 videos
+log_level: INFO             # DEBUG for verbose planner/critic prompt logging
+critic_n_shot: 0        # null → uses n_shots value (10); set 0 to disable examples
