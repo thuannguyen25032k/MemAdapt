@@ -1,0 +1,26 @@
+# Large runtime outputs — not needed at build time
+outputs/
+running/
+
+# Habitat lab — separate environment, not used by eb-man
+habitat-lab/
+
+# Data files
+data/
+
+# Model weights (large binary)
+*.pt
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+*.egg-info/
+
+# Git
+.git/
+.gitignore
+
+# Editor/IDE
+.vscode/
+*.swp

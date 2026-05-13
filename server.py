@@ -8,7 +8,7 @@ max_token = 1024
 # model_path = "microsoft/Phi-4-multimodal-instruct"
 # model_path = 'AIDC-AI/Ovis2-16B'
 # model_path = 'AIDC-AI/Ovis2-34B'
-model_path = 'google/gemma-3-12b-it'
+model_path = os.environ.get('MODEL_PATH', 'google/gemma-3-12b-it')
 
 # Load the custom model
 class CustomModel:
@@ -38,10 +38,29 @@ class CustomModel:
             self.generation_config = GenerationConfig.from_pretrained(model_path)
         elif 'gemma' in model_path:
             self.model = Gemma3ForConditionalGeneration.from_pretrained(
-                model_path, device_map="auto", torch_dtype=torch.bfloat16,
+                model_path, device_map="auto", dtype=torch.bfloat16,
                 attn_implementation="eager"
             )
             self.processor = AutoProcessor.from_pretrained(model_path)
+        elif 'Qwen3-VL' in model_path:
+            self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+            try:
+                from transformers import AutoModelForImageTextToText
+                self.model = AutoModelForImageTextToText.from_pretrained(
+                    model_path,
+                    torch_dtype=torch.bfloat16,
+                    trust_remote_code=True,
+                    device_map='auto'
+                )
+            except Exception:
+                # Fallback for transformers versions without AutoModelForImageTextToText
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    model_path,
+                    torch_dtype=torch.bfloat16,
+                    trust_remote_code=True,
+                    device_map='auto',
+                    attn_implementation="eager"
+                )
 
 
     def respond(self, prompt, image_path=None):
@@ -89,6 +108,41 @@ class CustomModel:
                 )
                 output_ids = self.model.generate(input_ids,  pixel_values=pixel_values, attention_mask=attention_mask, **gen_kwargs)[0]
                 response = self.text_tokenizer.decode(output_ids, skip_special_tokens=True)
+        elif 'Qwen3-VL' in self.model_path:
+            image = Image.open(image_path).convert('RGB')
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": image},
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ]
+
+            text = self.processor.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True
+            )
+            inputs = self.processor(
+                text=[text],
+                images=[image],
+                return_tensors="pt"
+            ).to(self.model.device)
+
+            input_len = inputs["input_ids"].shape[-1]
+            with torch.inference_mode():
+                generation = self.model.generate(
+                    **inputs,
+                    max_new_tokens=max_token,
+                    do_sample=False,
+                    temperature=0.0,
+                    use_cache=True
+                )
+                generation = generation[0][input_len:]
+
+            response = self.processor.decode(generation, skip_special_tokens=True)
         else:
             messages = [
                 {

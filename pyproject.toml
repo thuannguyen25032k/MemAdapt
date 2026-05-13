@@ -1,9 +1,3 @@
 [build-system]
 requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
-
-[project]
-name = "embodiedbench"
-version = "0.1"
-requires-python = ">=3.9"
-dependencies = []
