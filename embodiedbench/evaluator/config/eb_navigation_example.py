@@ -21,7 +21,7 @@ Environment Feedback: Step 8 is executed successfully; Step 9 is executed succes
 
 Reasoning and reflection: I can see that the floorlamp is at the right side of me, slight in the front. I think it in effect of consecutively moving leftward. Also, I have got away with the obstacle.\
 Now I need to move right and I will probably be close to the floorlamp.
-Executable plans: [[2, Move rightward by 0.25], [2, Move rightward by 0.25]]]
+Executable plans: [[2, Move rightward by 0.25], [2, Move rightward by 0.25]]
 
 Environment Feedback: Step 12 is executed successfully; Step 13 is executed successfully. 
 
@@ -33,6 +33,7 @@ Environment Feedback: Step 14 is executed successfully; Step 15 is executed succ
 
 Task Success
 '''
+
 ,
 '''
 Human Instruction: Navigate to the computer on the desk and be as close as possible.

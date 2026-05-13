@@ -107,7 +107,7 @@ class SymbolicCritic:
                            f"(0 ~ {num_actions - 1}).")
             }
 
-        # 2. Holding conflict check — robot cannot pick up while already holding an object
+        # 2a. Holding conflict check — robot cannot pick up while already holding an object
         if re.match(r'^pick up the .+$', action_str.strip(), re.IGNORECASE):
             if inventory_objects:
                 held_type = inventory_objects[0].get('objectType', 'unknown object')
@@ -115,6 +115,15 @@ class SymbolicCritic:
                     "valid": False,
                     "reason": (f"Robot is currently holding '{held_type}' and cannot pick up "
                                f"another object. Put down or drop the held object first."),
+                }
+
+        # 2b. Empty-hand check — robot cannot put down or drop while holding nothing
+        if re.match(r'^(put down|drop) .+$', action_str.strip(), re.IGNORECASE):
+            if not inventory_objects:
+                return {
+                    "valid": False,
+                    "reason": ("Robot is not holding any object, so 'put down' / 'drop' is "
+                               "invalid. Pick up an object first."),
                 }
 
         # 3. Object availability check
@@ -253,22 +262,63 @@ class VLMCritic:
                                "Falling back to text-only evaluation.")
                 messages = [{"role": "user",
                              "content": [{"type": "text", "text": prompt}]}]
-
-        # Call the model using the critic-specific method that uses a simple JSON schema
+                
         try:
-            out = self.model.respond_critic(messages)
-            out = fix_json(out)
+            out = self.model.respond(messages)
             result = json.loads(out)
             return {
                 "valid":       bool(result.get("valid", True)),
                 "reason":      str(result.get("reason", "")),
                 "suggestions": str(result.get("suggestions", "")),
-                "_prompt":     prompt,   # kept for debug logging; stripped by DualCritic
+                "_prompt":     prompt,
             }
-        except Exception as e:
-            logger.warning(f"VLM critic evaluation failed ({e}). Defaulting to valid=True.")
+        except (json.JSONDecodeError, Exception) as e:
+            logger.warning(f"VLM critic JSON parse failed ({e}); trying regex fallback.")
+            fallback = self._regex_fallback(out)
+            if fallback is not None:
+                fallback["_prompt"] = prompt
+                return fallback
+            logger.warning("VLM critic regex fallback also failed. Defaulting to valid=True.")
             return {"valid": True, "reason": "Critic evaluation failed; defaulting to valid.",
                     "suggestions": "", "_prompt": prompt}
+
+    # ------------------------------------------------------------------
+    # Regex fallback parser for malformed critic output
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _regex_fallback(text: str):
+        """
+        Try to extract valid/reason/suggestions from raw model output when
+        json.loads() fails.  Returns a dict or None if extraction fails.
+        """
+        if not text:
+            return None
+        try:
+            # --- valid ---
+            # Matches:  "valid": true / "valid": false  (with or without quotes around value)
+            m_valid = re.search(r'"valid"\s*:\s*(true|false)', text, re.I)
+            if m_valid is None:
+                # Heuristic: look for explicit reject/invalid keywords
+                text_lower = text.lower()
+                if any(kw in text_lower for kw in ("invalid", "reject", "not valid",
+                                                    "should not", "cannot", "can not")):
+                    valid = False
+                else:
+                    valid = True
+            else:
+                valid = m_valid.group(1).lower() == "true"
+
+            # --- reason ---
+            m_reason = re.search(r'"reason"\s*:\s*"((?:[^"\\]|\\.)*)"', text, re.DOTALL)
+            reason = m_reason.group(1).strip() if m_reason else text.strip()[:300]
+
+            # --- suggestions ---
+            m_sugg = re.search(r'"suggestions"\s*:\s*"((?:[^"\\]|\\.)*)"', text, re.DOTALL)
+            suggestions = m_sugg.group(1).strip() if m_sugg else ""
+
+            return {"valid": valid, "reason": reason, "suggestions": suggestions}
+        except Exception:
+            return None
 
 
 # ---------------------------------------------------------------------------
@@ -507,8 +557,7 @@ class DualCritic:
                 "vlm_result":      None,
                 "vlm_prompt":      None,
                 "feedback": (f"[Symbolic Critic] The next action '{action_str}' "
-                             f"is not executable: {sym_result['reason']} "
-                             f"Please replan accordingly."),
+                             f"is not executable: {sym_result['reason']}"),
             }
 
         # --- VLM check (skip for first step) ---

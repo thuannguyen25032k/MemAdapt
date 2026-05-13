@@ -9,21 +9,21 @@ import typing_extensions as typing
 from pydantic import BaseModel, Field
 
 template_lang = '''\
-The output json format should be {'reasoning_and_reflection':str, 'language_plan':str, 'executable_plan':List[{'action_id':int, 'action_name':str}...]}
-The fields in above JSON follows the purpose below:
+The output JSON format should be {'reasoning_and_reflection':str, 'language_plan':str, 'executable_plan':List[{'action_id':int, 'action_name':str}...]}
+The fields in above JSON follow the purpose below:
 1. reasoning_and_reflection is for summarizing the history of interactions and any available environmental feedback. Additionally, provide reasoning as to why the last action or plan failed and did not finish the task, \
 2. language_plan is for describing a list of actions to achieve the user instruction. Each action is started by the step number and the action name, \
-3. executable_plan is a list of actions needed to achieve the user instruction, with each action having an action ID and a name.
+3. executable_plan is a list of actions needed to achieve the user instruction. For each action, action_id MUST be the integer shown in parentheses next to the object name in the action table above, e.g. if the table shows "Mug(97)" under PICK UP, use action_id 97 and action_name "pick up the Mug".
 !!! When generating content for JSON strings, avoid using any contractions or abbreviated forms (like 's, 're, 've, 'll, 'd, n't) that use apostrophes. Instead, write out full forms (is, are, have, will, would, not) to prevent parsing errors in JSON. Please do not output any other thing more than the above-mentioned JSON, do not include ```json and ```!!!
 '''
 
 template = '''
-The output json format should be {'visual_state_description':str, 'reasoning_and_reflection':str, 'language_plan':str, 'executable_plan':List[{'action_id':int, 'action_name':str}...]}
-The fields in above JSON follows the purpose below:
+The output JSON format should be {'visual_state_description':str, 'reasoning_and_reflection':str, 'language_plan':str, 'executable_plan':List[{'action_id':int, 'action_name':str}...]}
+The fields in above JSON follow the purpose below:
 1. visual_state_description is for description of current state from the visual image, 
 2. reasoning_and_reflection is for summarizing the history of interactions and any available environmental feedback. Additionally, provide reasoning as to why the last action or plan failed and did not finish the task, 
 3. language_plan is for describing a list of actions to achieve the user instruction. Each action is started by the step number and the action name, 
-4. executable_plan is a list of actions needed to achieve the user instruction, with each action having an action ID and a name.
+4. executable_plan is a list of actions needed to achieve the user instruction. For each action, action_id MUST be the integer shown in parentheses next to the object name in the action table above, e.g. if the table shows "Mug(97)" under PICK UP, use action_id 97 and action_name "pick up the Mug".
 5. keep your plan efficient and concise.
 !!! When generating content for JSON strings, avoid using any contractions or abbreviated forms (like 's, 're, 've, 'll, 'd, n't) that use apostrophes. Instead, write out full forms (is, are, have, will, would, not) to prevent parsing errors in JSON. Please do not output any other thing more than the above-mentioned JSON, do not include ```json and ```!!!.
 '''
@@ -50,39 +50,75 @@ The fields in above JSON follows the purpose below:
 
 def fix_json(json_str):
     """
-    Locates the substring between the keys "reasoning_and_reflection" and "language_plan"
-    and escapes any inner double quotes that are not already escaped.
-    
-    The regex uses a positive lookahead to stop matching when reaching the delimiter for the next key.
+    Attempt to repair common model-output JSON errors so that json.loads() succeeds.
+
+    Strategy (in order):
+    1. Strip markdown code fences.
+    2. Extract the outermost {...} block (ignore any preamble/postamble text).
+    3. Replace Python literals: True→true, False→false, None→null.
+    4. Insert missing commas between adjacent objects/arrays (}{  →  },{  and ][  →  ],[).
+    5. Remove trailing commas before ] or }.
+    6. Replace single-quoted JSON structural delimiters (keys and string values)
+       with double quotes, WITHOUT touching apostrophes inside already-double-quoted values.
+    7. For each known long free-text field (visual_state_description,
+       reasoning_and_reflection, language_plan) escape any bare double-quotes that
+       appear inside the value, using a lookahead to the next JSON key boundary.
     """
-    # first fix common errors
-    json_str = json_str.replace("'",'"') 
-    json_str = json_str.replace('\"s ', "\'s ")
-    json_str = json_str.replace('\"re ', "\'re ")
-    json_str = json_str.replace('\"ll ', "\'ll ")
-    json_str = json_str.replace('\"t ', "\'t ")
-    json_str = json_str.replace('\"d ', "\'d ")
-    json_str = json_str.replace('\"m ', "\'m ")
-    json_str = json_str.replace('\"ve ', "\'ve ")
-    json_str = json_str.replace('```json', '').replace('```', '')
+    # 1. Strip markdown code fences
+    json_str = json_str.replace('```json', '').replace('```', '').strip()
 
-    # Then fix some situations. Pattern explanation:
-    # 1. ("reasoning_and_reflection"\s*:\s*") matches the key and the opening quote.
-    # 2. (?P<value>.*?) lazily captures everything in a group named 'value'.
-    # 3. (?=",\s*"language_plan") is a positive lookahead that stops matching before the closing quote
-    #    that comes before the "language_plan" key.
-    pattern = r'("reasoning_and_reflection"\s*:\s*")(?P<value>.*?)(?=",\s*"language_plan")'
-    
-    def replacer(match):
-        prefix = match.group(1)            # Contains the key and the opening quote.
-        value = match.group("value")         # The raw value that might contain unescaped quotes.
-        # Escape any double quote that is not already escaped.
-        fixed_value = re.sub(r'(?<!\\)"', r'\\"', value)
-        return prefix + fixed_value
+    # 2. Extract the outermost JSON object (handles preamble like "Output: {...}")
+    brace_start = json_str.find('{')
+    brace_end   = json_str.rfind('}')
+    if brace_start != -1 and brace_end != -1 and brace_end > brace_start:
+        json_str = json_str[brace_start:brace_end + 1]
 
-    # Use re.DOTALL so that newlines in the value are included.
-    fixed_json = re.sub(pattern, replacer, json_str, flags=re.DOTALL)
-    return fixed_json
+    # 3. Replace Python literals with JSON equivalents.
+    #    Use \b word boundaries so we don't corrupt words like "Trueblood" or "FalseStart".
+    json_str = re.sub(r'\bTrue\b',  'true',  json_str)
+    json_str = re.sub(r'\bFalse\b', 'false', json_str)
+    json_str = re.sub(r'\bNone\b',  'null',  json_str)
+
+    # 4. Insert missing commas between adjacent } { or ] [ pairs.
+    #    This fixes executable_plan items like [...}{...] that InternVL sometimes emits.
+    json_str = re.sub(r'}\s*{', '},{', json_str)
+    json_str = re.sub(r']\s*\[', '],[', json_str)
+
+    # 5. Remove trailing commas before a closing ] or }.
+    json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
+
+    # 6. Convert single-quoted keys/string-delimiters to double quotes.
+    #    Only replace ' that act as JSON delimiters (immediately after { , [ or :),
+    #    to avoid turning apostrophes inside already-double-quoted string values.
+
+    # Targeted replacement of single-quoted keys: {'key': ...}
+    json_str = re.sub(r"(?<=[{,])\s*'([^']+)'\s*:", lambda m: f' "{m.group(1)}":', json_str)
+
+    # Replace remaining single-quote string delimiters that wrap values
+    # (preceded by : or [ or , followed by optional space)
+    json_str = re.sub(r"(?<=[:,\[])\s*'((?:[^'\\]|\\.)*)'", lambda m: f' "{m.group(1)}"', json_str)
+
+    # 7. Escape bare double-quotes inside free-text string values.
+    #    For each long-text field, find the value between its opening quote and the
+    #    quote that precedes the next key (or end of object).
+    text_fields = [
+        'visual_state_description',
+        'reasoning_and_reflection',
+        'language_plan',
+    ]
+    next_key_pattern = r'(?="\s*,\s*"(?:' + '|'.join(text_fields + ['executable_plan']) + r')"|\s*"\s*})'
+
+    for field in text_fields:
+        pattern = r'("' + field + r'"\s*:\s*")(?P<value>.*?)' + next_key_pattern
+        def _escape_inner(match):
+            prefix = match.group(1)
+            value  = match.group('value')
+            # Escape any double-quote not already escaped
+            value  = re.sub(r'(?<!\\)"', r'\\"', value)
+            return prefix + value
+        json_str = re.sub(pattern, _escape_inner, json_str, flags=re.DOTALL)
+
+    return json_str
 
 
 class ExecutableAction_1(typing.TypedDict): 

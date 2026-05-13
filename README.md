@@ -1,2 +1,15 @@
 # MemAdapt
 Design a memory adapter that can provide a foresight plan for the planner and feasibility criteria for the planning verifier based on task instruction, state, and memories. The memory adapter has to work well with different types of memories and increase the success rate.
+## 1. Overall Goal 
+a. What problem? 
+Most existing works in the field of robot learning focus on designing memory systems integrated to generate plans for improving success rates of long-horizon tasks. However, memories may be stale as the immediate environment changes after one or several actions. Obsolete memories not only fail to improve planning efficiency but also interfere with the planning process. 
+b. What is the core contribution or novelty? 
+In order to resolve this problem, I proposed a plug-and-play module called a "memory adapter" that can transform obsolete memories into useful information for task planning in the current environment. Particularly, we design a memory adapter that can provide a foresight plan for the VLM planner and feasibility criteria for the planning verifier based on task instruction, the robot's observation, and memories. We hypothesize that the memory adapter works well with different VLM planners, VLM critics, and different types of memories. In addition, we hypothesize that it can improve the success rate and safety as the memory adapter provides long-term vision for the VLM planner and specific criteria for the VLM critic. Furthermore, the idea of a memory adapter can help to reuse a robot's skills across different environments 
+## 2. System Components 
+Our system including the following modules/components: Inputs of our system are visual perception and human instruction. Memory systems include 4 types of memories that are spatial memory (3D scene graph), temporal memory, episodic memory, and semantic memory. Our memory systems are inspired by the papers Karma and Robomemory. Memory adapter (VLM model) Planner (VLM model) Critic (VLM model) Robot/agent Environment: We will evaluate our system on AI2Thor and Habitat simulators. 
+## 3. Information Flow 
+Regarding information flow, please consider the image for more information. 
+## 4. Types of memory 
+Our memory systems are inspired by the papers Karma and Robomemory. In particular, we want to use 4 types of memories that are spatial memory (3D scene graph), temporal memory, episodic memory, and semantic memory. 
+## 5. Learning Process 
+In order to fine-tune the memory adapter, we tend to apply the two-stage training method, a method similar to that in the paper “A Goal Without a Plan Is Just a Wish: Efficient and Effective Global Planner Training for Long-Horizon Agent Tasks." But we will modify the reward function and the loss function. Could you please draw a system architecture diagram to illustrate my idea clearly and vividly?
