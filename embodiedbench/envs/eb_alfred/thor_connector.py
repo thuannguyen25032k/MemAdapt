@@ -1,5 +1,6 @@
 import os, math, re
 import textwrap
+from typing import Optional
 
 import numpy as np
 from scipy import spatial
@@ -64,6 +65,42 @@ class ThorConnector(ThorEnv):
         return img
 
 
+    def find_nearest_visible_receptacle(self, max_distance: float = 1.5) -> Optional[str]:
+        """
+        Return the objectType of the nearest visible receptacle within *max_distance*
+        metres, or None if no suitable receptacle is found.
+
+        Excludes objects the robot is currently holding and objects that are
+        themselves pickupable (e.g. plates), preferring fixed furniture-style
+        receptacles (counters, tables, sinks, shelves, etc.).
+        """
+        inventory_ids = {
+            obj['objectId']
+            for obj in self.last_event.metadata.get('inventoryObjects', [])
+        }
+
+        best_name = None
+        best_dist = max_distance
+
+        for obj in self.last_event.metadata['objects']:
+            if not obj.get('receptacle', False):
+                continue
+            if not obj.get('visible', False):
+                continue
+            if obj['objectId'] in inventory_ids:
+                continue
+            # Prefer non-pickupable (fixed) receptacles; skip tiny pickupable ones
+            # unless nothing better is found — handled via distance penalty below.
+            dist = obj.get('distance', 1e8)
+            penalty = 0.3 if obj.get('pickupable', False) else 0.0
+            effective_dist = dist + penalty
+
+            if effective_dist < best_dist:
+                best_dist = effective_dist
+                best_name = obj['objectType']
+
+        return best_name
+
     def find_close_reachable_position(self, loc, nth=1):
         d, i = self.reachable_position_kdtree.query(loc, k=nth + 1)
         selected = i[nth - 1]
@@ -89,7 +126,15 @@ class ThorConnector(ThorEnv):
             # obj = m.group(1).replace('the ', '')
             # receptacle = m.group(2).replace('the ', '')
             if self.cur_receptacle is None:
-                ret = self.drop()
+                # Try to find a nearby visible receptacle before falling back to drop
+                nearest_recep = self.find_nearest_visible_receptacle(max_distance=1.5)
+                if nearest_recep is not None:
+                    log.info(f"cur_receptacle is None — using nearest visible receptacle: {nearest_recep}")
+                    self.cur_receptacle = nearest_recep
+                else:
+                    # No receptacle in range at all — drop as last resort
+                    log.warning("No visible receptacle found within range; falling back to drop.")
+                    ret = self.drop()
             else:
                 m = re.match(r'put down (.+)', instruction)
                 obj = m.group(1).replace('the ', '')
@@ -322,13 +367,15 @@ class ThorConnector(ThorEnv):
                 ))
                 
                 if not self.last_event.metadata['lastActionSuccess']:
-                    if len(self.last_event.metadata['inventoryObjects']) == 0:
-                        ret_msg = f'Robot is not holding any object'
-                    else:
-                        # check if the agent is holding the object
-                        holding_obj_id = self.last_event.metadata['inventoryObjects'][0]['objectId']
+                    if len(self.last_event.metadata['inventoryObjects']) > 0:
+                        # pickup failed because the robot is already holding another object
                         holding_obj_type = self.last_event.metadata['inventoryObjects'][0]['objectType']
-                        ret_msg = f'Robot is currently holding {holding_obj_type}'
+                        ret_msg = f'Robot is currently holding {holding_obj_type}. Put down or drop the held object before picking up {obj_name}'
+                    else:
+                        # pickup failed for a physical reason (not close enough, object occluded, etc.)
+                        error_msg = self.last_event.metadata.get('errorMessage', '')
+                        ret_msg = (f'Pick up {obj_name} failed. Make sure to navigate close to the object first. '
+                                   + (f'Error: {error_msg}' if error_msg else ''))
 
             if self.last_event.metadata['lastActionSuccess']:
                 ret_msg = ''
