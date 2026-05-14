@@ -14,7 +14,6 @@ env_feedback: True
 tp: 1
 # --- Dual-Critic ---
 use_critic: True           # set to True to enable the dual-critic module
-critic_examples_path: null  # null → uses embodiedbench/evaluator/config/critic_examples.json
 
 # --- Video / logging ---
 video_fps: 2                # frames-per-second for saved episode MP4 videos

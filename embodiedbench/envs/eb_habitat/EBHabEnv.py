@@ -188,6 +188,10 @@ class EBHabEnv(gym.Env):
         self.episode_log = []
         if self.recording:
             self.episode_video = []
+            # capture the initial frame (before any action)
+            frame = self.env.render("rgb_array")
+            frame = self._annotate_frame(frame, action=None, info=None)
+            self.episode_video.append(frame)
         self._episode_start_time = time.time()
         return obs
 
@@ -256,7 +260,9 @@ class EBHabEnv(gym.Env):
         self._current_step += 1
         obs, reward, done, info = self.env.step(action, **kwargs)
         if self.recording:
-            self.episode_video.append(self.env.render("rgb_array"))
+            frame = self.env.render("rgb_array")
+            frame = self._annotate_frame(frame, action, info)
+            self.episode_video.append(frame)
 
         if info['was_prev_action_invalid']:
             self._cur_invalid_actions += 1
@@ -294,30 +300,130 @@ class EBHabEnv(gym.Env):
         img.save(image_path)
         return image_path
 
-    def save_episode_log(self):
+    def _annotate_frame(self, frame: np.ndarray, action, info) -> np.ndarray:
+        """Overlay task instruction and action text on a video frame."""
+        from PIL import Image as PILImage, ImageDraw, ImageFont
+        img = PILImage.fromarray(frame)
+        draw = ImageDraw.Draw(img)
+
+        # Try to use a slightly larger default font; fall back gracefully
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
+            font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+        except Exception:
+            font = ImageFont.load_default()
+            font_small = font
+
+        # -- Instruction banner at the top --
+        instruction = self.episode_language_instruction or ''
+        # wrap long instructions
+        max_chars = 60
+        words = instruction.split()
+        lines, current = [], ''
+        for w in words:
+            if len(current) + len(w) + 1 <= max_chars:
+                current = (current + ' ' + w).strip()
+            else:
+                lines.append(current)
+                current = w
+        if current:
+            lines.append(current)
+
+        y = 6
+        for line in lines:
+            # semi-transparent background rectangle
+            bbox = draw.textbbox((8, y), line, font=font)
+            draw.rectangle([bbox[0]-2, bbox[1]-2, bbox[2]+2, bbox[3]+2], fill=(0, 0, 0, 160))
+            draw.text((8, y), line, font=font, fill=(255, 255, 100))
+            y += bbox[3] - bbox[1] + 4
+
+        # -- Action label at the bottom --
+        if action is not None:
+            step = self._current_step
+            if info is not None:
+                action_str = info.get('action_description', '') or (
+                    self.language_skill_set[action] if isinstance(action, int) else str(action))
+                success = info.get('last_action_success', None)
+                success_str = '' if success is None else (' ✓' if success else ' ✗')
+            else:
+                action_str = self.language_skill_set[action] if isinstance(action, int) else str(action)
+                success_str = ''
+            bottom_text = f'Step {step}: {action_str}{success_str}'
+        else:
+            bottom_text = 'Step 0: (initial observation)'
+
+        h = img.height
+        bbox = draw.textbbox((8, h - 28), bottom_text, font=font_small)
+        draw.rectangle([bbox[0]-2, bbox[1]-2, bbox[2]+2, bbox[3]+2], fill=(0, 0, 0, 160))
+        draw.text((8, h - 28), bottom_text, font=font_small, fill=(100, 255, 100))
+
+        return np.ascontiguousarray(img)
+
+    def save_episode_log(self, fps: int = 2):
         if not os.path.exists(self.log_path):
             os.makedirs(self.log_path)
-        # time_stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
-        filename = 'episode_{}_step_{}.json'.format(self._current_episode_num, self._current_step) #, time_stamp)
+        filename = 'episode_{}_step_{}.json'.format(self._current_episode_num, self._current_step)
         if len(self.episode_log):
             with open(os.path.join(self.log_path, filename), 'w', encoding='utf-8') as f:
                 for item in self.episode_log:
                     json.dump(item, f, ensure_ascii=False)
-                    f.write('\n')  
-        
-        if len(self.episode_video):
-            folder = self.log_path + '/video'
-            if not os.path.exists(folder):
-                os.makedirs(folder)
-            video_writer = imageio.get_writer(os.path.join(folder, 'video_episode_{}_steps_{}.mp4'.format(self._current_episode_num, self._current_step)), fps=30)
-            for data in self.episode_video:
-                video_writer.append_data(data)
+                    f.write('\n')
+
+        if self.episode_video:
+            folder = os.path.join(self.log_path, 'video')
+            os.makedirs(folder, exist_ok=True)
+            video_path = os.path.join(
+                folder,
+                'video_episode_{}_steps_{}.mp4'.format(self._current_episode_num, self._current_step),
+            )
+            video_writer = imageio.get_writer(video_path, fps=fps, macro_block_size=1)
+            for frame in self.episode_video:
+                video_writer.append_data(np.ascontiguousarray(frame))
             video_writer.close()
-
-
+            self.episode_video = []
+            logger.info(f"Episode {self._current_episode_num} video saved to {video_path}")
 
     def render(self, mode: str = "rgb"):
         return self.env.render(mode)
+
+    def get_scene_objects(self) -> list:
+        """
+        Return a list of objects known to be in the current scene.
+
+        Habitat does not expose per-object scene metadata the way AI2-THOR does,
+        so we return a lightweight representation derived from the action space:
+        one entry per unique object type that has a 'pick up' action available.
+        This is sufficient for the symbolic critic's range and holding-state checks;
+        fine-grained object-availability checks are delegated to the VLM critic.
+
+        Returns:
+            list[dict]: list of dicts with at least an 'objectType' key.
+        """
+        objects = []
+        seen = set()
+        for action_str in self.language_skill_set:
+            if action_str.startswith('pick up the '):
+                obj_type = action_str[len('pick up the '):]
+                if obj_type not in seen:
+                    seen.add(obj_type)
+                    objects.append({'objectType': obj_type, 'objectId': obj_type})
+        return objects
+
+    def get_inventory_objects(self) -> list:
+        """
+        Return the list of objects currently held by the robot.
+
+        Habitat tracks holding state via the boolean ``self.is_holding``.
+        When the robot is holding something we return a single placeholder
+        dict so that the symbolic critic can detect the held-object conflict
+        without needing the exact object type.
+
+        Returns:
+            list[dict]: one-element list with objectType when holding, else [].
+        """
+        if self.is_holding:
+            return [{"objectType": "held_object", "objectId": "held_object"}]
+        return []
 
     def close(self) -> None:
         """Terminate the environment."""

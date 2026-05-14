@@ -20,8 +20,8 @@ tp: null
 log_level: null
 # --- Dual-Critic ---
 use_critic: null            # set to True to enable the dual-critic module
-critic_examples_path: null  # override path to critic_examples.json (null → built-in default)
 
 # --- Video / logging ---
+record_video: null          # set to True to record annotated episode videos
 video_fps: null             # frames-per-second for saved episode videos
 critic_n_shot: null        # examples for critic prompt; null → falls back to n_shots

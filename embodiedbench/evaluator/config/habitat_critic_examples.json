@@ -1,0 +1,68 @@
+[
+  {
+    "instruction": "Put the apple on the left counter in the kitchen.",
+    "next_action": "action id 33, pick up the apple",
+    "followup_steps": "  Step 1: action id 11, navigate to the left counter in the kitchen\n  Step 2: action id 55, place at the left counter in the kitchen",
+    "observation_description": "The robot is near the sofa. An apple is visible on the sofa cushion. The robot's gripper is empty.",
+    "output": {
+      "valid": true,
+      "reason": "The robot is not holding anything and the apple is visible on the sofa nearby, so picking it up is valid.",
+      "suggestions": ""
+    }
+  },
+  {
+    "instruction": "Move the banana to table 1.",
+    "next_action": "action id 37, pick up the banana",
+    "followup_steps": "  Step 1: action id 6, navigate to the table 1\n  Step 2: action id 50, place at the table 1",
+    "observation_description": "The robot is near the sofa. The robot's gripper already holds a bowl.",
+    "output": {
+      "valid": false,
+      "reason": "The robot is already holding a bowl and cannot pick up the banana until the held object is placed somewhere.",
+      "suggestions": "Navigate to a receptacle and execute 'place' to put down the bowl, then pick up the banana."
+    }
+  },
+  {
+    "instruction": "Place the sponge on the right counter.",
+    "next_action": "action id 54, place at the right counter in the kitchen",
+    "followup_steps": "(none — this is the last planned step)",
+    "observation_description": "The robot is near the right counter. Its gripper is holding the sponge.",
+    "output": {
+      "valid": true,
+      "reason": "The robot is holding the sponge and is near the right counter, so placing is valid.",
+      "suggestions": ""
+    }
+  },
+  {
+    "instruction": "Place the sponge on the right counter.",
+    "next_action": "action id 54, place at the right counter in the kitchen",
+    "followup_steps": "(none — this is the last planned step)",
+    "observation_description": "The robot is near the right counter but its gripper is empty.",
+    "output": {
+      "valid": false,
+      "reason": "The robot is not holding any object, so 'place' is invalid.",
+      "suggestions": "Navigate to where the sponge is located and execute 'pick up the sponge' first."
+    }
+  },
+  {
+    "instruction": "I left the fridge open. Please close it.",
+    "next_action": "action id 13, navigate to the refrigerator",
+    "followup_steps": "  Step 1: action id 61, close the refrigerator",
+    "observation_description": "The robot is in the living room. The refrigerator is not currently visible.",
+    "output": {
+      "valid": true,
+      "reason": "Navigation is always valid regardless of visibility. The robot will move toward the refrigerator.",
+      "suggestions": ""
+    }
+  },
+  {
+    "instruction": "Open the cabinet 2 and take out the cup.",
+    "next_action": "action id 62, open the cabinet 2",
+    "followup_steps": "  Step 1: action id 43, pick up the cup\n  Step 2: action id 6, navigate to the table 1\n  Step 3: action id 50, place at the table 1",
+    "observation_description": "The robot is positioned in front of cabinet 2. The cabinet door is clearly already open.",
+    "output": {
+      "valid": false,
+      "reason": "Cabinet 2 is already visibly open in the image, so 'open' is not valid.",
+      "suggestions": "Skip the open action and proceed directly to pick up the cup from inside cabinet 2."
+    }
+  }
+]

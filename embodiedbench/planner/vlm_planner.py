@@ -68,6 +68,7 @@ class VLMPlanner():
             ("TURN ON",  _re.compile(r'^turn on the (.+)$',   _re.I)),
             ("TURN OFF", _re.compile(r'^turn off the (.+)$',  _re.I)),
             ("SLICE",    _re.compile(r'^slice the (.+)$',     _re.I)),
+            ("NAVIGATE", _re.compile(r'^navigate to (.+)$',    _re.I)),
         ]
 
         for idx, action in enumerate(available_actions):

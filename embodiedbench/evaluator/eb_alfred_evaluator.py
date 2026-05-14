@@ -5,7 +5,7 @@ import time
 import json
 from embodiedbench.envs.eb_alfred.EBAlfEnv import EBAlfEnv, ValidEvalSets
 from embodiedbench.planner.vlm_planner import VLMPlanner
-from embodiedbench.planner.critic import DualCritic, SymbolicCritic, VLMCritic
+from embodiedbench.planner.critic import DualCritic, AlfredSymbolicCritic, VLMCritic
 from embodiedbench.evaluator.summarize_result import average_json_values
 from embodiedbench.evaluator.evaluator_utils import load_saved_data, update_config_with_args
 from embodiedbench.evaluator.config.system_prompts import alfred_system_prompt
@@ -69,15 +69,12 @@ class EB_AlfredEvaluator():
             use_critic = self.config.get('use_critic', False)
             self.dual_critic = None
             if use_critic:
-                sym_critic = SymbolicCritic()
+                sym_critic = AlfredSymbolicCritic()
                 vlm_critic = VLMCritic(
                     model=self.planner.model,
                     model_name=self.model_name,
+                    env="alfred",
                     language_only=self.config.get('language_only', False),
-                    examples_path=self.config.get(
-                        'critic_examples_path',
-                        os.path.join(os.path.dirname(__file__), 'config', 'critic_examples.json')
-                    ),
                     n_shot=self.config.get('critic_n_shot', self.config.get('n_shots', 0)),
                 )
                 self.dual_critic = DualCritic(sym_critic, vlm_critic)

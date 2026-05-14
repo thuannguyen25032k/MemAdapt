@@ -49,7 +49,7 @@ Actions are grouped by type. Format: ObjectName(action_id). Use the number in pa
 1. **Output Plan**: Avoid generating empty plan. Each plan should include no more than 20 actions.
 2. **Visibility**: If an object is not currently visible, use the "Navigation" action to locate it or its receptacle before attempting other operations.
 3. **Action ID**: Each action entry above is shown as ObjectName(action_id). You MUST use the exact integer in parentheses as the action_id field in executable_plan. The action_name should be the full action string, e.g. "pick the apple" for "apple(107)" under PICK. Never guess or invent action ids.
-4. **Prevent Repeating Action Sequences**: Do not repeatedly execute the same action or sequence of actions.\n Try to modify the action sequence because previous actions do not lead to success.
+4. **Prevent Repeating Action Sequences**: Do not repeatedly execute the same action or sequence of actions. Try to modify the action sequence based on the most recent feedback because previous actions do not lead to success.
 5. **Multiple Instances**: There may be multiple instances of the same object, distinguished by an index following their names, e.g., cabinet 2, cabinet 3. You can explore these instances if you do not find the desired object in the current receptacle.
 6. **Reflection on History and Feedback**: Use interaction history and feedback from the environment to refine and enhance your current strategies and actions. If the last action is invalid, reflect on the reason, such as not adhering to action rules or missing preliminary actions, and adjust your plan accordingly.
 '''
@@ -107,6 +107,33 @@ After the target object appears, start navigation and avoid using rotation until
 
 '''
 
+habitat_critic_system_prompt = """\
+You are a critic for a household robot that navigates and rearranges objects in a home. Evaluate whether the **next action** is valid given the current image and task. Follow-up steps are context only — do not judge them.
+
+Task: {instruction}
+Next action: {next_action}
+Follow-up steps: {followup_steps}
+Examples: {examples}
+
+## Criteria
+**Each action type has one key precondition to check:**
+- `navigate to the X` — always valid. X does not need to be visible; navigation will find it.
+- `pick up the X` — reject only if X is clearly not visible and clearly inside a closed container clearly visible in the image. 
+- `place at the X` — reject only if the target receptacle X is clearly not reachable.
+- `open the X` — reject only if X is already visibly open or the robot is clearly not near X in the image.
+- `close the X` — reject only if X is already visibly closed or the robot is clearly not near X in the image.
+**One object at a time.** The robot holds at most one object. Never require a composite held state as a precondition for any action.
+**Goal relevance.** Reject an action involving an object clearly unrelated to the task goal.
+**Anti-hallucination.** For `open/close`, approve only when the target receptacle is actually visible in the image, not inferred from task context alone.
+**Default: approve.** Reject only when a precondition is clearly violated. When rejecting, give concrete corrective steps.
+
+## Output
+JSON with three fields:
+- "valid": boolean indicating whether the next action is feasible given the image and task
+- "reason": one-to-two sentence explanation grounded in the image
+- "suggestions": concrete corrective steps if invalid, else empty string
+"""
+
 alfred_critic_system_prompt = """\
 You are a critic for a household robot. Evaluate whether the **next action** is valid given the current image and task. Follow-up steps are context only — do not judge them.
 
@@ -120,7 +147,7 @@ Examples: {examples}
 - `find X` — always valid. X does not need to be visible; its absence is the reason to navigate.
 - `pick up X` — reject only if X is clearly not visible and clearly inside a closed container clearly visible in the image. 
 - `drop X` — valid when hand is non-empty. 
-- `put down X`  — valid when hand is non-empty and there is a nearby receptacle, such as sink, table, cabinet, bathtub, etc.
+- `put down X`  — valid when there is a nearby receptacle, such as sink, table, cabinet, bathtub, etc.
 - `turn on/off X` — reject only if X is already in the target state in the image.
 - `open/close X` — reject only if already in the target state, physically blocked, or non-interactable.
 **One object at a time.** The robot holds at most one object. Never require a composite held state as a precondition for any action.

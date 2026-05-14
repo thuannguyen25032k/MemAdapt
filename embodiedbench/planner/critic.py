@@ -27,15 +27,19 @@ from embodiedbench.planner.planner_utils import local_image_to_data_url, fix_jso
 # ---------------------------------------------------------------------------
 _CONFIG_DIR = os.path.join(os.path.dirname(__file__),
                            '..', 'evaluator', 'config')
-_CRITIC_EXAMPLES_PATH = os.path.join(_CONFIG_DIR, 'critic_examples.json')
 
-def _load_critic_system_prompt() -> str:
-    """Import and return alfred_critic_system_prompt from system_prompts.py."""
-    from embodiedbench.evaluator.config.system_prompts import alfred_critic_system_prompt
-    return alfred_critic_system_prompt
+def _load_critic_system_prompt(env: str) -> str:
+    """Import and return env_critic_system_prompt from system_prompts.py."""
+    if env.lower() == 'habitat':
+        from embodiedbench.evaluator.config.system_prompts import habitat_critic_system_prompt
+        return habitat_critic_system_prompt
+    elif env.lower() == 'alfred':
+        from embodiedbench.evaluator.config.system_prompts import alfred_critic_system_prompt
+        return alfred_critic_system_prompt
 
-def _load_critic_examples(path: str = _CRITIC_EXAMPLES_PATH) -> list:
+def _load_critic_examples(env: str) -> list:
     """Load few-shot critic examples from JSON file."""
+    path = os.path.join(_CONFIG_DIR, f'{env}_critic_examples.json')
     try:
         with open(path, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -67,7 +71,7 @@ def _format_examples(examples: list) -> str:
 # ---------------------------------------------------------------------------
 # Symbolic Critic
 # ---------------------------------------------------------------------------
-class SymbolicCritic:
+class AlfredSymbolicCritic:
     """
     Checks two things without calling any model:
       1. The action ID is within the valid action-space range.
@@ -161,6 +165,64 @@ class SymbolicCritic:
 
 
 # ---------------------------------------------------------------------------
+# Habitat Symbolic Critic
+# ---------------------------------------------------------------------------
+class HabitatSymbolicCritic:
+    """
+    Checks three things without calling any model for the Habitat environment:
+      1. The action ID is within the valid action-space range.
+      2. Pick conflict: robot cannot pick up an object while already holding one.
+      3. Place conflict: robot cannot place an object when not holding anything.
+
+    Unlike Alfred, Habitat does not expose per-object scene metadata, so there
+    is no object-availability check — that is delegated to the VLM critic.
+    """
+
+    def evaluate(self, action_id: int, action_str: str,
+                 scene_objects: list, num_actions: int,
+                 inventory_objects: list = None) -> dict:
+        """
+        Returns:
+            dict with keys:
+              - valid  (bool)
+              - reason (str)
+        """
+        if inventory_objects is None:
+            inventory_objects = []
+
+        # 1. Range check
+        if action_id < 0 or action_id >= num_actions:
+            return {
+                "valid": False,
+                "reason": (f"Action id {action_id} is out of the valid range "
+                           f"(0 ~ {num_actions - 1}).")
+            }
+
+        action_lower = action_str.strip().lower()
+
+        # 2. Pick conflict — robot cannot pick while already holding an object
+        if action_lower.startswith('pick up the '):
+            if inventory_objects:
+                held = inventory_objects[0].get('objectType', 'an object')
+                return {
+                    "valid": False,
+                    "reason": (f"Robot is currently holding '{held}' and cannot pick up "
+                               "another object. Place the held object first."),
+                }
+
+        # 3. Place conflict — robot cannot place while holding nothing
+        if action_lower.startswith('place at the '):
+            if not inventory_objects:
+                return {
+                    "valid": False,
+                    "reason": ("Robot is not holding any object, so 'place' is invalid. "
+                               "Pick up an object first."),
+                }
+
+        return {"valid": True, "reason": "Action preconditions are satisfied."}
+
+
+# ---------------------------------------------------------------------------
 # VLM Critic
 # ---------------------------------------------------------------------------
 class VLMCritic:
@@ -175,8 +237,8 @@ class VLMCritic:
         embodiedbench/evaluator/config/critic_examples.json
     """
 
-    def __init__(self, model, model_name: str, language_only: bool = False,
-                 examples_path: str = _CRITIC_EXAMPLES_PATH, n_shot: int = 0):
+    def __init__(self, model, model_name: str, env: str, 
+                 language_only: bool = False, n_shot: int = 0):
         """
         Args:
             model          : the RemoteModel instance shared with VLMPlanner.
@@ -191,8 +253,8 @@ class VLMCritic:
         self.language_only = language_only
         self.n_shot        = n_shot
 
-        self._system_prompt_template = _load_critic_system_prompt()
-        self._examples               = _load_critic_examples(examples_path)
+        self._system_prompt_template = _load_critic_system_prompt(env)
+        self._examples               = _load_critic_examples(env)
 
     def _select_examples(self) -> list:
         """
@@ -342,7 +404,7 @@ class DualCritic:
     tree-structured JSON log via save_episode_critic_log().
     """
 
-    def __init__(self, symbolic_critic: SymbolicCritic, vlm_critic: VLMCritic,
+    def __init__(self, symbolic_critic: AlfredSymbolicCritic, vlm_critic: VLMCritic,
                  log_path: str = None):
         self.symbolic  = symbolic_critic
         self.vlm       = vlm_critic

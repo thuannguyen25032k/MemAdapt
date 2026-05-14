@@ -11,3 +11,4 @@ resolution: 500
 exp_name: baseline
 env_feedback: True
 tp: 1
+record_video: False
