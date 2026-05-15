@@ -2,6 +2,7 @@ outputs/
 *.pyc
 *__pycache__
 .vscode/
+A_Goal_Without_a_Plan_Is_Just_a_Wish.pdf
 embodiedbench/envs/eb_manipulation/generate_dataset.sh
 embodiedbench/envs/eb_manipulation/tools/__pycache__/grasploc.cpython-39.pyc
 *running
