@@ -353,7 +353,7 @@ class EBAlfEnv(gym.Env):
         """
         msg = ''
         if info["success"]:
-            msg += f"Last action executed successfully."
+            msg += f"The action executed successfully."
         else:
             if 'is not visible' in info['message'] and '|' in info['message']:
                 recep_id = info['message'].split('because it is in ')[1].split('. Note')[0]
@@ -364,7 +364,7 @@ class EBAlfEnv(gym.Env):
                 message = info['message'].split(recep_id)[0] + pos + '. Go there to pick the object instead.'
             else:
                 message = info['message']
-            msg += f"Last action is invalid. {message}"
+            msg += f"The action is invalid. {message}"
         return msg
     
     def seed(self, seed=None):
@@ -421,6 +421,30 @@ class EBAlfEnv(gym.Env):
             return self.env.last_event.metadata.get('inventoryObjects', [])
         except AttributeError:
             return []
+
+    def get_metadata(self) -> dict:
+        """Return full simulator metadata for initial 3D scene-graph construction.
+
+        Returns a dict with:
+        - ``objects``       : list of object dicts (objectType, position,
+                              parentReceptacles, state flags, …)
+        - ``sceneName``     : AI2-THOR scene identifier string
+        - ``agentPosition`` : agent's current {x, y, z} position
+        - ``agentRotation`` : agent's current {x, y, z} rotation
+
+        Returns:
+            dict: metadata snapshot, or minimal empty dict on error.
+        """
+        try:
+            meta = self.env.last_event.metadata
+            return {
+                "objects": meta.get("objects", []),
+                "sceneName": meta.get("sceneName", ""),
+                "agentPosition": (meta.get("agent") or {}).get("position", {}),
+                "agentRotation": (meta.get("agent") or {}).get("rotation", {}),
+            }
+        except AttributeError:
+            return {"objects": [], "sceneName": "", "agentPosition": {}, "agentRotation": {}}
 
     def save_episode_video(self, fps=2):
         """

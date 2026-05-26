@@ -144,9 +144,15 @@ class EBHabEnv(gym.Env):
             self._current_episode_num += 1
 
         self._current_step = 0
-        self._max_episode_steps = 30
+        # Long-horizon tasks require more object searches and pick-place cycles.
+        # Give them a larger step / invalid-action budget to avoid early termination.
+        if eval_set == 'long_horizon':
+            self._max_episode_steps = 50
+            self._max_invalid_actions = 15
+        else:
+            self._max_episode_steps = 30
+            self._max_invalid_actions = 10
         self._cur_invalid_actions = 0
-        self._max_invalid_actions = 10
         self._episode_start_time = 0
         # is holding an object
         self.is_holding = False
@@ -165,6 +171,7 @@ class EBHabEnv(gym.Env):
         # video recorder
         self.recording = recording
         self.episode_video = []
+        self.seed(42)
         
     def current_episode(self, all_info: bool = False):
         return self.env.current_episode(all_info)
@@ -204,7 +211,7 @@ class EBHabEnv(gym.Env):
             str: Descriptive message about step outcome
         """
         if info['was_prev_action_invalid']:
-            env_feedback = 'Last action is invalid.'
+            env_feedback = 'The action is invalid.'
             if 'pick' in info['action'] and self.feedback_verbosity:
                 if self.is_holding:
                     env_feedback += ' Robot cannot pick any object when holding something. Please place the object before picking something.'
@@ -220,7 +227,7 @@ class EBHabEnv(gym.Env):
             elif 'close' in info['action'] and self.feedback_verbosity:
                 env_feedback += " Check whether the receptacle is already closed or the robot is not near the receptacle."
         else:
-            env_feedback = 'Last action executed successfully'
+            env_feedback = 'The action executed successfully'
             if 'pick' in info['action'] and self.feedback_verbosity:
                 self.is_holding = True
                 env_feedback += ' and you are holding {}.'.format(info['action'].split('(')[0].split('_')[1])
@@ -362,12 +369,6 @@ class EBHabEnv(gym.Env):
     def save_episode_log(self, fps: int = 2):
         if not os.path.exists(self.log_path):
             os.makedirs(self.log_path)
-        filename = 'episode_{}_step_{}.json'.format(self._current_episode_num, self._current_step)
-        if len(self.episode_log):
-            with open(os.path.join(self.log_path, filename), 'w', encoding='utf-8') as f:
-                for item in self.episode_log:
-                    json.dump(item, f, ensure_ascii=False)
-                    f.write('\n')
 
         if self.episode_video:
             folder = os.path.join(self.log_path, 'video')
@@ -424,6 +425,43 @@ class EBHabEnv(gym.Env):
         if self.is_holding:
             return [{"objectType": "held_object", "objectId": "held_object"}]
         return []
+
+    def get_metadata(self) -> dict:
+        """Return scene metadata for initial 3D scene-graph construction.
+
+        Habitat does not expose full per-object position data the way AI2-THOR
+        does, so we derive a best-effort metadata dict from the action space:
+
+        - ``objects``     : list of ``{"objectType": name}`` dicts for all
+                            pick-up-able objects in the episode's action space.
+        - ``receptacles`` : list of receptacle name strings inferred from
+                            ``navigate to the …`` and ``place at the …`` actions.
+        - ``is_holding``  : whether the robot is currently holding an object.
+        - ``scene_id``    : task instruction string (episode identifier).
+
+        Returns:
+            dict: metadata snapshot.
+        """
+        objects: list = []
+        seen_obj: set = set()
+        receptacles: set = set()
+
+        for action_str in self.language_skill_set:
+            if action_str.startswith("pick up the "):
+                obj_type = action_str[len("pick up the "):]
+                if obj_type not in seen_obj:
+                    seen_obj.add(obj_type)
+                    objects.append({"objectType": obj_type, "objectId": obj_type})
+            elif action_str.startswith("navigate to the "):
+                receptacles.add(action_str[len("navigate to the "):])
+            elif action_str.startswith("place at the "):
+                receptacles.add(action_str[len("place at the "):])
+
+        return {
+            "objects": objects,
+            "receptacles": list(receptacles),
+            "scene_id": self.episode_language_instruction,
+        }
 
     def close(self) -> None:
         """Terminate the environment."""

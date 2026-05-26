@@ -7,6 +7,8 @@ import json
 import os
 import sys
 import math
+import glob
+import cv2
 from ai2thor.platform import CloudRendering
 from embodiedbench.envs.eb_navigation.utils import draw_target_box, draw_boxes
 from embodiedbench.main import logger
@@ -76,6 +78,8 @@ class EBNavigationEnv(gym.Env):
         self._current_episode_num = 0
         self._current_step = 0
         self._max_episode_steps = 20
+        self._cur_invalid_actions = 0
+        self._max_invalid_actions = 10
         self._episode_start_time = 0
         self.is_holding = False
         self.episode_log = []
@@ -163,6 +167,7 @@ class EBNavigationEnv(gym.Env):
         # reset episode information
         self._current_episode_num += 1
         self._current_step = 0
+        self._cur_invalid_actions = 0
 
         self.standing = True
         obs = {
@@ -255,6 +260,8 @@ class EBNavigationEnv(gym.Env):
                 action = np.random.randint(8)
 
             self.discrete_action_mapper(action)
+            if not self.env.last_event.metadata.get('lastActionSuccess', True):
+                self._cur_invalid_actions += 1
             reward, distance = self.measure_success()
             done = True
             info['action_description'] = self.language_skill_set[action]
@@ -264,8 +271,10 @@ class EBNavigationEnv(gym.Env):
                 action = np.random.randint(8)
 
             self.discrete_action_mapper(action)
+            if not self.env.last_event.metadata.get('lastActionSuccess', True):
+                self._cur_invalid_actions += 1
             reward, distance = self.measure_success()
-            if reward>0:
+            if reward > 0 or self._cur_invalid_actions >= self._max_invalid_actions:
                 done = True
             else:
                 done = False
@@ -282,15 +291,13 @@ class EBNavigationEnv(gym.Env):
         info['distance'] = distance
         info['env_feedback'] = self.get_env_feedback(self._last_event)
         info['reasoning'] = reasoning
-        # info['reflection'] = reasoning['reasoning_and_reflection']
-        # info['plan'] = reasoning['language_plan']
         info['instruction'] = self.episode_language_instruction
         info['env_step'] = self._current_step
         info['episode_elapsed_seconds'] = time.time() - self._episode_start_time
         info['task_success'] = reward
         info['last_action_success'] = self.env.last_event.metadata['lastActionSuccess']
         info['action_id'] = action
-        # info['reasoning'] = reasoning
+        info['num_invalid_actions'] = self._cur_invalid_actions
 
         self.episode_log.append(info)
 
@@ -336,9 +343,9 @@ class EBNavigationEnv(gym.Env):
 
         msg = ''
         if feedback["lastActionSuccess"]:
-            msg += f"Last action {feedback['lastAction']} executed successfully."
+            msg += f"The action {feedback['lastAction']} executed successfully."
         else:
-            msg += f"Last action {feedback['lastAction']} is invalid. {feedback['errorMessage']}"
+            msg += f"The action {feedback['lastAction']} is invalid. {feedback['errorMessage']}"
         return msg
 
     def seed(self, seed=None):
@@ -394,6 +401,114 @@ class EBNavigationEnv(gym.Env):
                 draw_boxes(img,self.env.last_event.instance_detections2D, image_path)
                 # img.save(image_path)
                 return image_path
+
+    def save_episode_video(self, fps=2):
+        """
+        Stitch the step images saved during the current episode into an MP4 video,
+        overlaying the task instruction and per-step action info on each frame.
+
+        Images are expected at:
+            <log_path>/episode_<idx>_step_<step>_*_front*.png
+
+        Args:
+            fps (int): Frames per second for the output video. Default is 2.
+
+        Returns:
+            str: Path to the saved video file, or None if no images were found.
+        """
+        episode_idx = self._current_episode_num if not len(self.selected_indexes) else self.selected_indexes[self._current_episode_num - 1] + 1
+
+        # Collect all front-view images for this episode and sort by step number
+        pattern = os.path.join(self.log_path, f'episode_{episode_idx}_step_*_front*.png')
+        image_files = sorted(
+            glob.glob(pattern),
+            key=lambda p: int(p.split('_step_')[1].split('_')[0])
+        )
+        if not image_files:
+            logger.warning(f"No images found for episode {episode_idx} (pattern: {pattern}), skipping video generation.")
+            return None
+
+        video_folder = os.path.join(self.log_path, 'videos')
+        os.makedirs(video_folder, exist_ok=True)
+        video_path = os.path.join(video_folder, f'episode_{episode_idx}.mp4')
+
+        first_frame = cv2.imread(image_files[0])
+        h, w, _ = first_frame.shape
+        writer = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+
+        font       = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.55
+        thickness  = 1
+        pad        = 8
+        line_h     = 22  # pixels per text line
+
+        def put_text_block(frame, lines, origin_y, bg_color, text_color):
+            """Draw a semi-transparent background box and overlay multiple text lines."""
+            block_h = len(lines) * line_h + pad * 2
+            overlay = frame.copy()
+            cv2.rectangle(overlay, (0, origin_y), (w, origin_y + block_h), bg_color, -1)
+            cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
+            for i, line in enumerate(lines):
+                y = origin_y + pad + (i + 1) * line_h - 4
+                cv2.putText(frame, line, (pad, y), font, font_scale, text_color, thickness, cv2.LINE_AA)
+            return origin_y + block_h
+
+        def wrap_text(text, max_chars=80):
+            words, lines, cur = text.split(), [], ''
+            for word in words:
+                if len(cur) + len(word) + 1 <= max_chars:
+                    cur = (cur + ' ' + word).strip()
+                else:
+                    if cur:
+                        lines.append(cur)
+                    cur = word
+            if cur:
+                lines.append(cur)
+            return lines or ['']
+
+        # Build a step->log lookup from the persisted episode JSON
+        step_log = {}
+        log_file = os.path.join(self.log_path, f'episode_{episode_idx}.json')
+        if os.path.exists(log_file):
+            with open(log_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            entry = json.loads(line)
+                            step_log[entry.get('env_step')] = entry
+                        except json.JSONDecodeError:
+                            pass
+
+        for img_file in image_files:
+            step_num = int(img_file.split('_step_')[1].split('_')[0])
+            frame = cv2.imread(img_file)
+
+            # Top banner: task instruction
+            instr_lines = wrap_text(f"Task: {self.episode_language_instruction}")
+            put_text_block(frame, instr_lines, 0, (0, 0, 0), (255, 255, 255))
+
+            # Bottom banner: step action info
+            log = step_log.get(step_num)
+            if log:
+                action_desc  = log.get('action_description', '')
+                success      = log.get('last_action_success', False)
+                task_success = log.get('task_success', 0)
+                feedback     = str(log.get('env_feedback', ''))
+                success_str  = 'SUCCESS' if success else 'FAILED'
+                color        = (0, 200, 0) if success else (0, 0, 220)
+                bottom_lines = [
+                    f"Step {step_num}: {action_desc}  [{success_str}]",
+                    f"Task success: {task_success}  |  {feedback[:90]}",
+                ]
+                block_h = len(bottom_lines) * line_h + pad * 2
+                put_text_block(frame, bottom_lines, h - block_h, (20, 20, 20), color)
+
+            writer.write(frame)
+
+        writer.release()
+        logger.info(f"Episode {episode_idx} video saved to {video_path}")
+        return video_path
 
     def save_episode_log_per_step(self, flag):
 

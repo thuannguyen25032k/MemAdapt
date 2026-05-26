@@ -252,9 +252,9 @@ class EBManEnv(gym.Env):
         msg = ''
         msg += f"You are currently performing the task intended to {self.episode_language_instruction.lower()} At this moment, you have completed executing {self._current_step} steps. "
         if task_success == True:
-            msg += f"Last action is valid. "
+            msg += f"The action is valid. "
         else:
-            msg += f"Last action is invalid. {task_success}."
+            msg += f"The action is invalid. {task_success}."
         msg += f"The current reward obtained is {reward}."    
         return msg
          
