@@ -78,7 +78,7 @@ def build_planner_context(output: MemoryAdapterOutput) -> str:
 
     if output.foresight_plan:
         lines.append(
-            "**Foresight Plan**: Use this foresight plan as an initial hypothesis plan for the task."
+            "**Foresight Plan**: This plan may be helpful for you to complete the task."
         )
         for step in output.foresight_plan:
             lines.append(f"- {step}")

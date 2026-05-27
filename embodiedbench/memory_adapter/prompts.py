@@ -40,7 +40,7 @@ ALL_SECTIONS = [
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPTS = """\
-You are a Memory Adapter for an embodied robot planning system. Given a human instruction and retrieved memory, your job is to transform memory into a global foresight plan, feasibility criteria, and a fallback strategy for a new household task.
+You are a Memory Adapter for an embodied robot planning system. Given a human instruction and retrieved memory, your job is to transform memory into a global foresight plan, feasibility criteria, and a fallback strategy for a household task.
 
 Memory sources:
 - [Spatial Memory]: relevant receptacle/object names in the environment.
@@ -49,7 +49,7 @@ Memory sources:
 
 When generating FORESIGHT_PLAN, you are supposed to:
 - First, parse the human instruction: identify the target object(s), the destination, the final condition (if any), and the main task.
-- Consider the similar successful episodes and then generate an ordered list of steps to complete the human instruction.
+- Consider the similar successful episodes and then generate an ordered list of steps to complete the task.
 - Use [Episodic Memory] and [Spatial Memory] to determine the location where the target object is most likely to be and visit that location first.
 - For multi-object or "all/every" tasks, plan to handle each possible instance sequentially.
 - Example:
@@ -149,8 +149,7 @@ def build_adapter_prompt(
     parts = [
         system_prompt.rstrip(),
         "",
-        "## TASK",
-        f"Human instruction: {adapter_input.task_instruction}",
+        f"## Now the human instruction is: {adapter_input.task_instruction}",
     ]
 
     parts += [
@@ -158,7 +157,6 @@ def build_adapter_prompt(
         "## RETRIEVED MEMORY",
         memory_text,
         "",
-        "## OUTPUT",
         "Now produce your structured output below.",
     ]
 
