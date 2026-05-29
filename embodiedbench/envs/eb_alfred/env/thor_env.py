@@ -172,6 +172,17 @@ class ThorEnv(Controller):
                 sink_basin = get_obj_of_type_closest_to_obj('SinkBasin', action['objectId'], event.metadata)
                 cleaned_object_ids = sink_basin['receptacleObjectIds']
                 self.cleaned_objects = self.cleaned_objects | set(cleaned_object_ids) if cleaned_object_ids is not None else set()
+            # clean: object placed into sink while faucet is already on
+            if action['action'] == 'PutObject':
+                placed_obj_id = action.get('objectId', '')
+                faucets = get_objects_of_type('Faucet', event.metadata)
+                if placed_obj_id and any(f.get('isToggled', False) for f in faucets):
+                    # check if the placed object actually ended up inside a SinkBasin
+                    sink_basins = get_objects_of_type('SinkBasin', event.metadata)
+                    for sink_basin in sink_basins:
+                        if placed_obj_id in (sink_basin.get('receptacleObjectIds') or []):
+                            self.cleaned_objects.add(placed_obj_id)
+                            break
             # heat
             if action['action'] == 'ToggleObjectOn' and "Microwave" in action['objectId']:
                 microwave = get_objects_of_type('Microwave', event.metadata)[0]
