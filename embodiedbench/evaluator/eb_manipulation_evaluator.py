@@ -11,6 +11,16 @@ from embodiedbench.envs.eb_manipulation.eb_man_utils import form_object_coord_fo
 from embodiedbench.planner.manip_planner import ManipPlanner
 from embodiedbench.evaluator.config.eb_manipulation_example import vlm_examples_baseline, llm_examples, vlm_examples_ablation
 from embodiedbench.main import logger
+from embodiedbench.memory.integration import (
+    create_memory_manager_from_config,
+    attach_memory_to_planner,
+    finalize_memory_episode,
+    save_memory_if_configured,
+    create_memory_adapter_from_config,
+    attach_memory_adapter_to_planner,
+    unload_memory_adapter,
+    setup_memory_experiment,
+)
 
 class EB_ManipulationEvaluator():
     def __init__(self, config):
@@ -19,6 +29,8 @@ class EB_ManipulationEvaluator():
         self.config = config
         self.env = None
         self.planner = None
+        self.memory_manager = None
+        self.memory_adapter = None
 
     def load_demonstration(self):
         all_examples = {}
@@ -122,6 +134,7 @@ class EB_ManipulationEvaluator():
             user_instruction = self.env.episode_language_instruction
             print(f"Instruction: {user_instruction}")
             self.planner.reset()
+            self.planner.set_episode_context(env_name="manipulation", task_type=str(getattr(self.env, 'current_task_variation', '')))
             done = False
             reasoning_list = []
 
@@ -176,6 +189,19 @@ class EB_ManipulationEvaluator():
             episode_info["episode_elapsed_seconds"] = info["episode_elapsed_seconds"]
             self.save_episode_metric(episode_info)
             self.save_planner_outputs(reasoning_list)
+
+            # --- Memory: finalize episode and save ---
+            finalize_memory_episode(
+                self.memory_manager, self.planner,
+                task_instruction=user_instruction,
+                info=info,
+                env_name="manipulation",
+                task_type=str(getattr(self.env, 'current_task_variation', '')),
+                episode_idx=getattr(self.env, '_current_episode_num', None),
+                extra_metadata={"model_name": self.model_name, "eval_set": str(self.eval_set)},
+            )
+            save_memory_if_configured(self.memory_manager, self.config, on_episode_end=True)
+
             progress_bar.update()
         self.print_task_eval_results(filename="summary.json")
         self.env.close()
@@ -220,9 +246,16 @@ class EB_ManipulationEvaluator():
                                         multistep=self.config["multistep"],
                                         visual_icl=self.config["visual_icl"],
                                         tp=self.config["tp"])
+
+            # --- Memory + MemoryAdapter setup (experiment-mode aware) ---
+            self.memory_manager, self.memory_adapter = setup_memory_experiment(
+                self.config, self.planner, None
+            )
+
             self.evaluate()
             with open(os.path.join(self.log_path, 'config.txt'), 'w') as f:
                 f.write(str(self.config))
+            unload_memory_adapter(self.memory_adapter)
                 
     def check_config_valid(self):
         if self.config['multiview'] + self.config['multistep'] + self.config['visual_icl'] + self.config['chat_history'] > 1:

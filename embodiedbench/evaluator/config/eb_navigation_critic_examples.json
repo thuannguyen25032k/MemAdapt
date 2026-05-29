@@ -1,0 +1,57 @@
+[
+  {
+    "instruction": "Navigate to the floorlamp and be as close as possible.",
+    "next_action": "action id 0, Move forward by 0.25",
+    "followup_steps": "  Step 2: action id 0, Move forward by 0.25\n  Step 3: action id 3, Move leftward by 0.25",
+    "observation_description": "The floorlamp is clearly visible slightly to the left in front of the robot. No obstacle is blocking the forward path.",
+    "output": {
+      "valid": true,
+      "reason": "The floorlamp is visible in the front-left direction and moving forward is the most direct way to close the distance.",
+      "suggestions": ""
+    }
+  },
+  {
+    "instruction": "Navigate to the television and be as close as possible.",
+    "next_action": "action id 4, Rotate to the right by 90 degrees",
+    "followup_steps": "  Step 2: action id 0, Move forward by 0.25\n  Step 3: action id 0, Move forward by 0.25",
+    "observation_description": "The television is clearly visible directly in front of the robot, centered in the image.",
+    "output": {
+      "valid": false,
+      "reason": "The television is already fully visible and centered in the current view. Rotating away from it will cause the robot to lose sight of the target.",
+      "suggestions": "Remove the rotation. Move forward directly toward the television to reduce the distance."
+    }
+  },
+  {
+    "instruction": "Navigate to the sofa and be as close as possible.",
+    "next_action": "action id 1, Move backward by 0.25",
+    "followup_steps": "  Step 2: action id 0, Move forward by 0.25\n  Step 3: action id 0, Move forward by 0.25",
+    "observation_description": "The sofa is visible far ahead of the robot. The robot is in an open corridor with no obstacle in front.",
+    "output": {
+      "valid": false,
+      "reason": "The sofa is ahead of the robot and no obstacle is blocking the forward path. Moving backward increases the distance to the target unnecessarily.",
+      "suggestions": "Replace the backward move with a forward move to approach the sofa."
+    }
+  },
+  {
+    "instruction": "Navigate to the bookshelf and be as close as possible.",
+    "next_action": "action id 5, Rotate to the left by 90 degrees",
+    "followup_steps": "  Step 2: action id 0, Move forward by 0.25\n  Step 3: action id 2, Move rightward by 0.25",
+    "observation_description": "The robot cannot see the bookshelf in the current field of view. The room appears to be empty in the forward direction.",
+    "output": {
+      "valid": true,
+      "reason": "The bookshelf is not visible in the current observation. Rotating is the correct strategy to locate a target that has not yet appeared in view.",
+      "suggestions": ""
+    }
+  },
+  {
+    "instruction": "Navigate to the dining table and be as close as possible.",
+    "next_action": "action id 0, Move forward by 0.25",
+    "followup_steps": "  Step 2: action id 0, Move forward by 0.25",
+    "observation_description": "A large chair is directly in front of the robot, completely blocking the forward path. The dining table is visible behind the chair.",
+    "output": {
+      "valid": false,
+      "reason": "A chair is clearly blocking the forward path. Attempting to move forward will be rejected by the environment.",
+      "suggestions": "Detour around the obstacle: move leftward or rightward by 0.25 once or twice to clear the chair, then resume moving forward toward the dining table."
+    }
+  }
+]

@@ -10,6 +10,22 @@ from embodiedbench.evaluator.summarize_result import average_json_values
 from embodiedbench.evaluator.evaluator_utils import load_saved_data, update_config_with_args
 from embodiedbench.evaluator.config.system_prompts import habitat_system_prompt
 from embodiedbench.main import logger
+from embodiedbench.memory.integration import (
+    finalize_memory_episode,
+    save_memory_if_configured,
+    unload_memory_adapter,
+    setup_memory_experiment,
+    create_metrics_from_config,
+    attach_metrics_to_planner,
+    attach_metrics_to_critic,
+    collect_episode_metrics,
+    create_logger_from_config,
+)
+from embodiedbench.memory.logging import MemoryExperimentLogger
+from embodiedbench.memory_dataset.recorder import TrajectoryRecorder
+from embodiedbench.wandb_utils import wandb_run
+from embodiedbench.wandb_utils.eval_logger import EvalWandbLogger
+from embodiedbench.wandb_utils.artifact_utils import log_results_artifact
 
 link_path = os.path.join(os.path.dirname(__file__), '../envs/eb_habitat/data')
 try:
@@ -31,6 +47,12 @@ class EB_HabitatEvaluator():
         self.env = None
         self.planner = None
         self.system_prompt = system_prompt
+        self.memory_manager = None
+        self.memory_adapter = None
+        self.metrics = None
+        self.mem_logger = None
+        self.recorder: TrajectoryRecorder | None = None
+        self.eval_logger: EvalWandbLogger | None = None
 
     def check_config_valid(self):
         if self.config['multistep'] + self.config['chat_history'] > 1:
@@ -54,7 +76,7 @@ class EB_HabitatEvaluator():
     def evaluate_main(self):
         valid_eval_sets = self.config.get('eval_sets', ValidEvalSets)
         valid_eval_sets = list(valid_eval_sets)
-        if type(valid_eval_sets) == list and len(valid_eval_sets) == 0:
+        if isinstance(valid_eval_sets, list) and len(valid_eval_sets) == 0:
             valid_eval_sets = ValidEvalSets
             
         for eval_set in valid_eval_sets:
@@ -89,25 +111,84 @@ class EB_HabitatEvaluator():
                 self.dual_critic.log_path = self.env.log_path
                 logger.info("[DualCritic] Enabled for this evaluation run.")
 
+            # --- Memory + MemoryAdapter setup (experiment-mode aware) ---
+            self.memory_manager, self.memory_adapter = setup_memory_experiment(
+                self.config, self.planner, self.dual_critic
+            )
+
+            # --- Metrics setup (once per eval-set) ---
+            self.metrics = create_metrics_from_config(self.config)
+            attach_metrics_to_planner(self.planner, self.metrics)
+            attach_metrics_to_critic(self.dual_critic, self.metrics)
+
+            # --- Logger setup (once per eval-set) ---
+            self.mem_logger = create_logger_from_config(self.config)
+
+            # W&B: init run for this eval_set
+            wb_cfg = self.config.get("wandb")
+            if wb_cfg is not None:
+                from embodiedbench.wandb_utils.config import WandbConfig
+                wb_cfg = WandbConfig.from_mapping(wb_cfg)
+            if wb_cfg is not None and wb_cfg.enabled:
+                wandb_run.init(
+                    wb_cfg,
+                    run_name=f"{self.config.get('exp_name', 'eval')}_{eval_set}",
+                    config_dict=self.config,
+                    extra_tags=["habitat", eval_set, self.config.get("exp_name", "")],
+                    extra_group="habitat",
+                )
+            self.eval_logger = EvalWandbLogger(benchmark="habitat", eval_set=eval_set, mode=self.config.get("mode", "none"))
+
             self.evaluate()
+            summary_path = os.path.join(self.env.log_path, 'results', 'summary.json')
             average_json_values(os.path.join(self.env.log_path, 'results'), output_file='summary.json')
             with open(os.path.join(self.env.log_path, 'config.txt'), 'w') as f:
                 f.write(str(self.config))
 
+            # W&B: log summary and results artifact
+            if self.eval_logger is not None:
+                try:
+                    with open(summary_path, 'r') as _f:
+                        summary_dict = json.load(_f)
+                    self.eval_logger.log_summary(summary_dict)
+                except Exception:
+                    pass
+                log_results_artifact(
+                    os.path.join(self.env.log_path, 'results'),
+                    run_name=self.config.get('exp_name', 'habitat_eval'),
+                )
+                wandb_run.finish()
+
+            save_memory_if_configured(self.memory_manager, self.config, on_run_end=True)
+            unload_memory_adapter(self.memory_adapter)
+
     def evaluate(self):
-        dual_critic = getattr(self, 'dual_critic', None)
+        dual_critic = self.dual_critic
         progress_bar = tqdm(total=self.env.number_of_episodes, desc="Episodes")
         while self.env._current_episode_num < self.env.number_of_episodes:
             logger.info(f"Evaluating episode {self.env._current_episode_num} ...")
             episode_info = {'reward': [], 'num_invalid_actions': 0, 'empty_plan': 0}
+            if self.metrics is not None:
+                self.metrics.reset_episode()
             obs = self.env.reset()
             img_path = self.env.save_image(obs)
             user_instruction = self.env.episode_language_instruction
             print(f"Instruction: {user_instruction}")
 
+            # --- Set up per-episode trajectory recorder ---
+            self.recorder = TrajectoryRecorder(
+                episode_id=f"habitat_{self.eval_set}_{self.env._current_episode_num}",
+                env_name="habitat",
+                scene_id=str(self.eval_set),
+                task_instruction=user_instruction,
+            )
+
             self.planner.reset()
+            self.planner.set_episode_context(env_name="habitat", task_type=str(self.eval_set))
             if dual_critic is not None:
                 dual_critic.reset()
+            if self.memory_manager is not None:
+                self.memory_manager.initialize_episode(self.env.get_metadata())
             done = False
             info = {
                 'task_success': 0, 'task_progress': 0, 'subgoal_reward': 0,
@@ -156,15 +237,15 @@ class EB_HabitatEvaluator():
                             break
                         continue
                     # multiple actions
-                    if type(action) == list:
+                    if isinstance(action, list):
                         capped_actions = action[:min(self.env._max_episode_steps - self.env._current_step, len(action))]
                         critic_triggered = False
+                        full_plan = [(a, self.env.language_skill_set[a]
+                                      if isinstance(a, int) else a)
+                                     for a in capped_actions]
                         for step_i, action_single in enumerate(capped_actions):
                             # --- Dual-Critic evaluation before execution ---
                             if dual_critic is not None:
-                                remaining = [(a, self.env.language_skill_set[a]
-                                              if isinstance(a, int) else a)
-                                             for a in capped_actions[step_i:]]
                                 scene_objects = self.env.get_scene_objects()
                                 inventory_objects = self.env.get_inventory_objects()
                                 critic_result = dual_critic.evaluate(
@@ -175,7 +256,8 @@ class EB_HabitatEvaluator():
                                     num_actions=len(self.env.language_skill_set),
                                     image_path=img_path,
                                     instruction=user_instruction,
-                                    remaining_actions=remaining,
+                                    full_plan=full_plan,
+                                    current_index=step_i,
                                     is_first_step=(step_i == 0),
                                     inventory_objects=inventory_objects,
                                 )
@@ -187,7 +269,8 @@ class EB_HabitatEvaluator():
                                     action_str=(self.env.language_skill_set[action_single]
                                                 if isinstance(action_single, int) else str(action_single)),
                                     image_path=img_path,
-                                    remaining_actions=remaining,
+                                    full_plan=full_plan,
+                                    current_index=step_i,
                                     is_first_step=(step_i == 0),
                                     result=critic_result,
                                     vlm_prompt=critic_result.get("vlm_prompt"),
@@ -201,15 +284,39 @@ class EB_HabitatEvaluator():
                                     break  # exit action loop → outer while loop triggers replanning
 
                             obs, reward, done, info = self.env.step(action_single, reasoning=reasoning)
-                            action_str = action_single if type(action_single) == str else self.env.language_skill_set[action_single]
+                            action_str = action_single if isinstance(action_single, str) else self.env.language_skill_set[action_single]
                             print(f"Executed action: {action_str}, Task success: {info['task_success']}")
                             logger.debug(f"reward: {reward}")
                             logger.debug(f"terminate: {done}\n")
+
+                            # Populate spatial memory: inject scene/inventory objects into info
+                            info['scene_objects'] = self.env.get_scene_objects()
+                            info['inventory_objects'] = self.env.get_inventory_objects()
                             
-                            self.planner.update_info(info)
+                            self.planner.update_info(info, metadata=self.env.get_metadata())
                             img_path = self.env.save_image(obs)
                             episode_info['reward'].append(reward)
                             episode_info['num_invalid_actions'] += (info['last_action_success'] == 0)
+                            # --- Record timestep ---
+                            if self.recorder is not None:
+                                _cf = ""
+                                if dual_critic is not None and hasattr(dual_critic, "vlm") and dual_critic.vlm is not None:
+                                    _cf = getattr(dual_critic.vlm, "last_adapted_memory_prompt", "") or ""
+                                _adapter_out = getattr(self.planner, "last_adapted_memory_output", None)
+                                self.recorder.record_step(
+                                    step_id=self.env._current_step,
+                                    action=action_str,
+                                    planner_prompt=getattr(self.planner, "last_memory_prompt", "") or "",
+                                    planner_output=getattr(self.planner, "last_memory_output", "") or "",
+                                    critic_feedback=_cf,
+                                    env_feedback=info.get("env_feedback", ""),
+                                    retrieved_memory=str(getattr(self.planner, "last_memory_context", "") or ""),
+                                    foresight_plan=getattr(_adapter_out, "foresight_plan", None),
+                                    feasibility_criteria=getattr(_adapter_out, "feasibility_criteria", None),
+                                    fallback_strategy=getattr(_adapter_out, "fallback_strategy", None),
+                                    success=bool(info.get("last_action_success", 0)),
+                                    done=done,
+                                )
                             if done or info['last_action_success'] == 0:
                                 # stop or replanning
                                 print("Invalid action or task complete. If invalid then Replanning.")
@@ -219,18 +326,22 @@ class EB_HabitatEvaluator():
                             continue  # go back to planner.act() for replanning
                     else:
                         obs, reward, done, info = self.env.step(action, reasoning=reasoning)
-                        action_str = action if type(action) == str else self.env.language_skill_set[action]
+                        action_str = action if isinstance(action, str) else self.env.language_skill_set[action]
                         print(f"Executed action: {action_str}, Task success: {info['task_success']}")
                         logger.debug(f"reward: {reward}")
                         logger.debug(f"terminate: {done}\n")
+
+                        # Populate spatial memory: inject scene/inventory objects into info
+                        info['scene_objects'] = self.env.get_scene_objects()
+                        info['inventory_objects'] = self.env.get_inventory_objects()
                             
-                        self.planner.update_info(info)
+                        self.planner.update_info(info, metadata=self.env.get_metadata())
                         img_path = self.env.save_image(obs)
                         episode_info['reward'].append(reward)
                         episode_info['num_invalid_actions'] += (info['last_action_success'] == 0)
                 
                 except Exception as e: 
-                    print(e)
+                    raise e
                     time.sleep(30)
 
             # evaluation metrics
@@ -239,6 +350,11 @@ class EB_HabitatEvaluator():
             episode_info['task_success'] = info['task_success']
             episode_info["task_progress"] = info['task_progress']
             episode_info['subgoal_reward'] = info.get('subgoal_reward', 0)
+            num_valid_actions = info["env_step"] - episode_info['num_invalid_actions']
+            episode_info['num_valid_actions'] = num_valid_actions
+            episode_info['eff_rate'] = (
+                num_valid_actions / info["env_step"] if info["env_step"] > 0 else 0.0
+            )
             episode_info['num_steps'] = info["env_step"]
             episode_info['planner_steps'] = self.planner.planner_steps
             episode_info['planner_output_error'] = self.planner.output_json_error
@@ -247,12 +363,6 @@ class EB_HabitatEvaluator():
             num_replans = max(self.planner.planner_steps - 1, 0)
             episode_info['num_replans'] = num_replans
             episode_info['replan_rate'] = num_replans / info['env_step'] if info['env_step'] > 0 else 0.0
-
-            # --- Invalid action metrics ---
-            episode_info["num_invalid_actions"] = episode_info['num_invalid_actions']
-            episode_info['invalid_action_rate'] = (
-                episode_info['num_invalid_actions'] / info["env_step"] if info['env_step'] > 0 else 0.0
-            )
 
             # --- JSON parse error rate ---
             episode_info['planner_json_error_rate'] = (
@@ -278,8 +388,37 @@ class EB_HabitatEvaluator():
 
             episode_info["episode_elapsed_seconds"] = info.get("episode_elapsed_seconds", time.time() - self.env._episode_start_time)
             
+            # --- Memory metrics ---
+            if self.metrics is not None:
+                collect_episode_metrics(self.metrics, episode_info)
+                episode_info['memory_metrics'] = self.metrics.to_dict()
+
+            # --- Memory episode log ---
+            if self.mem_logger is not None and self.mem_logger.enabled:
+                ep_record = MemoryExperimentLogger.build_episode_log(
+                    episode_id=f"habitat_{self.eval_set}_{self.env._current_episode_num}",
+                    env_name="habitat",
+                    scene_id=str(self.eval_set),
+                    task_instruction=user_instruction,
+                    mode=episode_info.get("memory_metrics", {}).get("mode", "none"),
+                    planner=self.planner,
+                    critic=dual_critic,
+                    episode_info=episode_info,
+                    metrics=self.metrics,
+                    metadata={"model_name": self.model_name, "eval_set": str(self.eval_set)},
+                )
+                self.mem_logger.log_episode(ep_record)
+                self.mem_logger.append_training_record(ep_record)
+
             self.env.save_episode_log(fps=self.config.get('video_fps', 2))
             self.save_episode_metric(episode_info)
+
+            # W&B: per-episode logging
+            if self.eval_logger is not None:
+                ep_idx_wb = self.env._current_episode_num
+                self.eval_logger.log_episode(episode_info, episode_idx=ep_idx_wb)
+                self.eval_logger.log_trajectory(user_instruction, self.env.episode_log, episode_idx=ep_idx_wb)
+
             episode_idx = self.env._current_episode_num
             self.planner.save_episode_planner_log(
                 instruction=user_instruction,
@@ -290,6 +429,19 @@ class EB_HabitatEvaluator():
                     instruction=user_instruction,
                     episode_idx=episode_idx,
                 )
+
+            # --- Memory: finalize episode and save ---
+            finalize_memory_episode(
+                self.memory_manager, self.planner,
+                task_instruction=user_instruction,
+                info=info,
+                env_name="habitat",
+                task_type=str(self.eval_set),
+                episode_idx=episode_idx,
+                extra_metadata={"model_name": self.model_name, "eval_set": str(self.eval_set)},
+            )
+            save_memory_if_configured(self.memory_manager, self.config, on_episode_end=True)
+
             progress_bar.update()
 
 
