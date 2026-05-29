@@ -107,7 +107,7 @@ class ThorConnector(ThorEnv):
         return self.reachable_positions[selected]
 
     def llm_skill_interact(self, instruction: str):
-        if instruction.startswith("put down ") or instruction.startswith("open "):
+        if instruction.startswith("put down ") or instruction.startswith("open ") or instruction.startswith("close ") or instruction.startswith("turn on ") or instruction.startswith("turn off ") or instruction.startswith("slice "):
             pass
         else:
             self.cur_receptacle = None
@@ -125,6 +125,7 @@ class ThorConnector(ThorEnv):
             # m = re.match(r'put down (.+) on (.+)', instruction)
             # obj = m.group(1).replace('the ', '')
             # receptacle = m.group(2).replace('the ', '')
+            ret = None
             if self.cur_receptacle is None:
                 # Try to find a nearby visible receptacle before falling back to drop
                 nearest_recep = self.find_nearest_visible_receptacle(max_distance=1.5)
@@ -135,7 +136,8 @@ class ThorConnector(ThorEnv):
                     # No receptacle in range at all — drop as last resort
                     log.warning("No visible receptacle found within range; falling back to drop.")
                     ret = self.drop()
-            else:
+
+            if self.cur_receptacle is not None and ret is None:
                 m = re.match(r'put down (.+)', instruction)
                 obj = m.group(1).replace('the ', '')
 
@@ -351,14 +353,35 @@ class ThorConnector(ThorEnv):
             if obj_data['visible'] is False and obj_data['parentReceptacles'] is not None and len(obj_data['parentReceptacles']) > 0:
                 # recep_name = obj_data["parentReceptacles"][0].split('|')[0]
                 recep_name  = obj_data["parentReceptacles"][0]
-                ret_msg = f'{obj_name} is not visible because it is in {recep_name}. Note: multiple instances of {recep_name} may exist'
 
-                # try anyway
-                super().step(dict(
-                    action="PickupObject",
-                    objectId=obj_id,
-                    forceAction=False
-                ))
+                # Check if the parent receptacle is an open surface (CounterTop, DiningTable, etc.)
+                # vs. a closed container (Fridge, Cabinet, Microwave, etc.).
+                # For open surfaces: use forceAction=True so the robot can pick up objects
+                # that are physically present but outside the camera's visibility cone.
+                # For closed containers: keep forceAction=False to respect the openable constraint.
+                parent_is_closed = False
+                is_openable = self.get_object_prop(recep_name, 'openable', self.last_event.metadata)
+                is_open = self.get_object_prop(recep_name, 'isOpen', self.last_event.metadata)
+                if is_openable and not is_open:
+                    parent_is_closed = True
+
+                if parent_is_closed:
+                    # Object is inside a closed container — guide the planner to open it
+                    ret_msg = f'{obj_name} is not visible because it is in {recep_name}. Note: multiple instances of {recep_name} may exist'
+                    super().step(dict(
+                        action="PickupObject",
+                        objectId=obj_id,
+                        forceAction=False
+                    ))
+                else:
+                    # Object is on an open surface but not in camera FOV —
+                    # use forceAction=True to avoid an infinite navigate→fail loop.
+                    ret_msg = f'{obj_name} is present near {recep_name} but not in view. Attempting forced pick up.'
+                    super().step(dict(
+                        action="PickupObject",
+                        objectId=obj_id,
+                        forceAction=True
+                    ))
             else:
                 super().step(dict(
                     action="PickupObject",
@@ -547,76 +570,110 @@ class ThorConnector(ThorEnv):
             obj_id = obj_name
             obj_name = obj_name.split('|')[0]
         else:
-            obj_id, _ = self.get_obj_id_from_name(obj_name)
+            obj_id, obj_data = self.get_obj_id_from_name(obj_name)
 
         if obj_id is None:
-            ret_msg = f'Cannot find {obj_name} to close'
+            ret_msg = f'Cannot find {obj_name} to close. Navigate to {obj_name} first'
         else:
-            super().step(dict(
-                action="CloseObject",
-                objectId=obj_id,
-            ))
+            already_closed = False
+            for ob in self.last_event.metadata['objects']:
+                if ob['objectId'] == obj_id and ob['openable'] and not ob['isOpen']:
+                    already_closed = True
+                    break
 
-            if not self.last_event.metadata['lastActionSuccess']:
-                ret_msg = f"Close action failed"
-            
-                for ob in self.last_event.metadata['objects']:
-                    if ob['objectId'] == obj_id and ob['openable'] and not ob['isOpen']:
-                        ret_msg += f". The {obj_name} is already closed"
-                        break
+            if already_closed:
+                ret_msg = f"Close action failed. The {obj_name} is already closed"
+            else:
+                super().step(dict(
+                    action="CloseObject",
+                    objectId=obj_id,
+                ))
+
+                if not self.last_event.metadata['lastActionSuccess']:
+                    error_msg = self.last_event.metadata.get('errorMessage', '')
+                    ret_msg = f"Close action failed" + (f". Error: {error_msg}" if error_msg else "")
 
         return ret_msg
 
     def toggleon(self, obj_name):
         log.info(f'toggle on {obj_name}')
         ret_msg = ''
-        obj_id, _ = self.get_obj_id_from_name(obj_name, only_toggleable=True)
+        obj_id, obj_data = self.get_obj_id_from_name(obj_name, only_toggleable=True)
         if obj_id is None:
-            ret_msg = f'Cannot find {obj_name} to turn on'
+            ret_msg = f'Cannot find {obj_name} to turn on. Navigate to {obj_name} before turning it on'
         else:
-            try:
-                super().step(dict(
-                    action="ToggleObjectOn",
-                    objectId=obj_id,
-                ))
-                if not self.last_event.metadata['lastActionSuccess']:
+            # Check if already on
+            if obj_data is not None and obj_data.get('isToggled', False):
+                ret_msg = f"Turn on action failed. The {obj_name} is already on"
+            else:
+                try:
+                    super().step(dict(
+                        action="ToggleObjectOn",
+                        objectId=obj_id,
+                    ))
+                    if not self.last_event.metadata['lastActionSuccess']:
+                        error_msg = self.last_event.metadata.get('errorMessage', '')
+                        dist = obj_data.get('distance', None) if obj_data else None
+                        if dist is not None and dist > 1.5:
+                            ret_msg = f"Turn on action failed. Robot is too far from {obj_name} (distance: {dist:.1f}m). Navigate closer first"
+                        else:
+                            ret_msg = f"Turn on action failed" + (f". Error: {error_msg}" if error_msg else "")
+                except:
                     ret_msg = f"Turn on action failed"
-            except:
-                ret_msg = f"Turn on action failed"
-                self.last_event.metadata['lastActionSuccess'] = False
+                    self.last_event.metadata['lastActionSuccess'] = False
 
         return ret_msg
 
     def toggleoff(self, obj_name):
         log.info(f'toggle off {obj_name}')
         ret_msg = ''
-        obj_id, _ = self.get_obj_id_from_name(obj_name, only_toggleable=True)
+        obj_id, obj_data = self.get_obj_id_from_name(obj_name, only_toggleable=True)
         if obj_id is None:
-            ret_msg = f'Cannot find {obj_name} to turn off'
+            ret_msg = f'Cannot find {obj_name} to turn off. Navigate to {obj_name} before turning it off'
         else:
-            super().step(dict(
-                action="ToggleObjectOff",
-                objectId=obj_id,
-            ))
-
-            if not self.last_event.metadata['lastActionSuccess']:
-                ret_msg = f"Turn off action failed"
+            # Check if already off
+            if obj_data is not None and not obj_data.get('isToggled', True):
+                ret_msg = f"Turn off action failed. The {obj_name} is already off"
+            else:
+                try:
+                    super().step(dict(
+                        action="ToggleObjectOff",
+                        objectId=obj_id,
+                    ))
+                    if not self.last_event.metadata['lastActionSuccess']:
+                        error_msg = self.last_event.metadata.get('errorMessage', '')
+                        dist = obj_data.get('distance', None) if obj_data else None
+                        if dist is not None and dist > 1.5:
+                            ret_msg = f"Turn off action failed. Robot is too far from {obj_name} (distance: {dist:.1f}m). Navigate closer first"
+                        else:
+                            ret_msg = f"Turn off action failed" + (f". Error: {error_msg}" if error_msg else "")
+                except:
+                    ret_msg = f"Turn off action failed"
+                    self.last_event.metadata['lastActionSuccess'] = False
 
         return ret_msg
 
     def slice(self, obj_name):
         log.info(f'slice {obj_name}')
         ret_msg = ''
-        obj_id, _ = self.get_obj_id_from_name(obj_name)
+        obj_id, obj_data = self.get_obj_id_from_name(obj_name)
         if obj_id is None:
-            ret_msg = f'Cannot find {obj_name} to slice'
+            ret_msg = f'Cannot find {obj_name} to slice. Navigate to {obj_name} first'
         else:
-            super().step(dict(
-                action="SliceObject",
-                objectId=obj_id,
-            ))
+            if obj_data is not None and obj_data.get('isSliced', False):
+                ret_msg = f"Slice action failed. The {obj_name} is already sliced"
+            else:
+                super().step(dict(
+                    action="SliceObject",
+                    objectId=obj_id,
+                ))
 
-            if not self.last_event.metadata['lastActionSuccess']:
-                ret_msg = f"Slice action failed"
+                if not self.last_event.metadata['lastActionSuccess']:
+                    error_msg = self.last_event.metadata.get('errorMessage', '')
+                    dist = obj_data.get('distance', None) if obj_data else None
+                    if dist is not None and dist > 1.5:
+                        ret_msg = f"Slice action failed. Robot is too far from {obj_name} (distance: {dist:.1f}m). Navigate closer first"
+                    else:
+                        ret_msg = f"Slice action failed" + (f". Error: {error_msg}" if error_msg else "")
 
         return ret_msg

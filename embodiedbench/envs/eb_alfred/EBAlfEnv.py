@@ -29,7 +29,7 @@ from embodiedbench.envs.eb_alfred.gen import constants
 from embodiedbench.main import logger
 
 # global information
-X_DISPLAY = '1'
+X_DISPLAY = '0'
 ALFRED_SPLIT_PATH = os.path.join(os.path.dirname(__file__), 'data/splits/splits.json')
 ALFRED_REWARD_PATH = os.path.join(os.path.dirname(__file__), 'models/config/rewards.json')
 ALFRED_DATASET_PATH = os.path.join(os.path.dirname(__file__), 'data/json_2.1.0')
@@ -120,9 +120,13 @@ class EBAlfEnv(gym.Env):
         self.selected_indexes = selected_indexes
         self._initial_episode_num = 0
         self._current_step = 0
-        self._max_episode_steps = 30
+        if eval_set == 'long_horizon':
+            self._max_episode_steps = 50
+            self._max_invalid_actions = 15
+        else:
+            self._max_episode_steps = 30
+            self._max_invalid_actions = 10
         self._cur_invalid_actions = 0
-        self._max_invalid_actions = 10
         self._episode_start_time = 0
         self.episode_log = []
         
@@ -167,6 +171,12 @@ class EBAlfEnv(gym.Env):
                     pickable_obj_dict[obj['objectType']].append(obj['objectId'])
                 else:
                     pickable_obj_dict[obj['objectType']] = [obj['objectId']]
+
+        # Sort each instance list by objectId to match SpatialMemory._parse_object_dicts() ordering
+        for key in recept_obj_dict:
+            recept_obj_dict[key].sort()
+        for key in pickable_obj_dict:
+            pickable_obj_dict[key].sort()
 
     
         # store the mapping for object with multiple instances
@@ -347,28 +357,56 @@ class EBAlfEnv(gym.Env):
         """
         Generate feedback message for the current step.
         Args:
-            info (dict): Action execution information
+            info (dict): Action execution information with keys 'action', 'success', 'message'
         Returns:
             str: Descriptive message about step outcome
         """
-        msg = ''
+        action = info.get('action', '')
+
         if info["success"]:
-            msg += f"The action executed successfully."
+            if action.startswith('find '):
+                obj = action.replace('find a ', '').replace('find an ', '')
+                msg = f"Successfully navigated to {obj}. You are now near {obj}."
+            elif action.startswith('pick up '):
+                obj = action.replace('pick up the ', '')
+                msg = f"Successfully picked up the {obj}. You are now holding the {obj}."
+            elif action.startswith('put down '):
+                receptacle = self.env.cur_receptacle or 'the receptacle'
+                msg = f"Successfully placed the held object on {receptacle}."
+            elif action.startswith('open '):
+                obj = action.replace('open the ', '')
+                msg = f"Successfully opened the {obj}."
+            elif action.startswith('close '):
+                obj = action.replace('close the ', '')
+                msg = f"Successfully closed the {obj}."
+            elif action.startswith('turn on '):
+                obj = action.replace('turn on the ', '')
+                msg = f"Successfully turned on the {obj}."
+            elif action.startswith('turn off '):
+                obj = action.replace('turn off the ', '')
+                msg = f"Successfully turned off the {obj}."
+            elif action.startswith('slice '):
+                obj = action.replace('slice the ', '')
+                msg = f"Successfully sliced the {obj}."
+            elif action.startswith('drop'):
+                msg = "Successfully dropped the held object."
+            else:
+                msg = "The action executed successfully."
         else:
-            if 'is not visible' in info['message'] and '|' in info['message']:
+            if 'is not visible' in info['message'] and '|' in info['message'] and 'because it is in ' in info['message']:
                 recep_id = info['message'].split('because it is in ')[1].split('. Note')[0]
                 if recep_id not in self.id_to_name_dict:
                     pos = recep_id.split('|')[0]
                 else:
                     pos = self.id_to_name_dict[recep_id]
                 message = info['message'].split(recep_id)[0] + pos + '. Go there to pick the object instead.'
+            elif 'is present near' in info['message'] and 'but not in view' in info['message']:
+                message = info['message']
             else:
                 message = info['message']
-            msg += f"The action is invalid. {message}"
+            msg = f"The action is invalid. {message}"
+
         return msg
-    
-    def seed(self, seed=None):
-        self.env.random_initilize(seed)
 
     def save_image(self, *args, **kwargs):
         """Save current agent view as a PNG image."""
