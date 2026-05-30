@@ -1,17 +1,8 @@
 """
 embodiedbench/memory_adapter/adapter.py
 
-MemoryAdapter — an independent Hugging Face LLM-backed module that transforms
+MemoryAdapter — a HuggingFace (or OpenAI) LLM-backed module that transforms
 retrieved MemoryContext into structured planner / critic guidance.
-
-Design
-------
-- The adapter owns its own tokenizer + model (loaded from HuggingFace).
-- generate() is a distinct method so tests can subclass and override it
-  without touching HuggingFace at all.
-- planner / critic context strings are built on-demand by callers via
-  build_planner_context() / build_critic_context().
-- The adapter is self-contained: no coupling to VLMPlanner or VLMCritic.
 """
 
 from __future__ import annotations
@@ -20,6 +11,7 @@ import json
 import logging
 import os
 import time
+from contextlib import nullcontext
 from typing import Any, Optional, Union
 
 from embodiedbench.memory_adapter.config import MemoryAdapterConfig
@@ -30,7 +22,7 @@ from embodiedbench.memory_adapter.parsing import parse_adapter_output
 logger = logging.getLogger("EB_logger")
 
 # ---------------------------------------------------------------------------
-# Optional HuggingFace / torch imports
+# Optional imports
 # ---------------------------------------------------------------------------
 try:
     import torch
@@ -146,6 +138,7 @@ class MemoryAdapter:
         self.tokenizer = None
         self.model = None
         self.device: str = "cpu"
+        self._use_device_map: bool = False  # set True when device_map="auto" is active
         # Cache the last adapt() result so the critic can reuse it without a second inference.
         self.last_output: Optional[MemoryAdapterOutput] = None
         # Cached OpenAI client (created lazily on first generate() call).
@@ -177,11 +170,14 @@ class MemoryAdapter:
             trust_remote_code=self.config.trust_remote_code,
         )
 
-        # Resolve device
-        if _TORCH_AVAILABLE and self.config.device == "auto":
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Resolve device and whether accelerate's device_map="auto" should be used.
+        # _use_device_map=True means inputs must NOT be manually moved in generate();
+        # accelerate handles placement internally.
+        if self.config.device == "auto":
+            self.device = "cuda" if (_TORCH_AVAILABLE and torch.cuda.is_available()) else "cpu"
+            self._use_device_map = True
         else:
-            self.device = self.config.device if self.config.device != "auto" else "cpu"
+            self.device = self.config.device
 
         dtype = _resolve_dtype(self.config.torch_dtype)
 
@@ -194,23 +190,20 @@ class MemoryAdapter:
         if self.config.load_in_4bit or self.config.load_in_8bit:
             try:
                 from transformers import BitsAndBytesConfig as _BnBConfig
-                bnb_cfg = _BnBConfig(
+                load_kwargs["quantization_config"] = _BnBConfig(
                     load_in_4bit=self.config.load_in_4bit,
                     load_in_8bit=self.config.load_in_8bit,
                 )
-                load_kwargs["quantization_config"] = bnb_cfg
+                self._use_device_map = True  # bitsandbytes requires device_map
             except ImportError:
                 logger.warning(
                     "[MemoryAdapter] bitsandbytes not available; "
                     "quantization disabled."
                 )
 
-        if self.device not in ("auto", "cpu") and not (
-            self.config.load_in_4bit or self.config.load_in_8bit
-        ):
-            load_kwargs["device_map"] = self.device
-        elif self.config.device == "auto":
-            load_kwargs["device_map"] = "auto"
+        # device_map="auto" shards across all available GPUs (required for large /
+        # quantized models). For an explicit device (e.g. "cuda:0") pass it directly.
+        load_kwargs["device_map"] = "auto" if self._use_device_map else self.device
 
         logger.info(f"[MemoryAdapter] Loading model from '{path}' "
                     f"(device={self.device}, dtype={self.config.torch_dtype})")
@@ -241,12 +234,19 @@ class MemoryAdapter:
                 api_key = self.config.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
                 self._openai_client = _OpenAI(api_key=api_key)
 
-            resp = self._openai_client.chat.completions.create(
-                model=self.config.openai_model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=self.config.max_new_tokens,
-                temperature=self.config.temperature,
-            )
+            # Reasoning models (o1, o3, o4-*) do not support the
+            # `temperature` parameter; newer models (gpt-4.1, gpt-5*)
+            # require `max_completion_tokens` instead of `max_tokens`.
+            _model = self.config.openai_model or ""
+            _is_reasoning = _model.startswith(("o1", "o3", "o4"))
+            _create_kwargs: dict = {
+                "model": _model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_completion_tokens": self.config.max_new_tokens,
+            }
+            if not _is_reasoning:
+                _create_kwargs["temperature"] = self.config.temperature
+            resp = self._openai_client.chat.completions.create(**_create_kwargs)
             return resp.choices[0].message.content or ""
 
         # --- Local HuggingFace backend ---
@@ -255,15 +255,38 @@ class MemoryAdapter:
                 "MemoryAdapter model is not loaded. "
                 "Ensure config.enabled=True and model_name_or_path is set."
             )
-        inputs = self.tokenizer(
-            prompt,
-            return_tensors="pt",
-            truncation=False,  # Let the model handle long inputs with its context window (and risk truncation if it exceeds it).
-        )
 
+        # Use apply_chat_template when available (required for Qwen3 and most
+        # instruction-tuned models) so the prompt is properly formatted and
+        # enable_thinking is respected.
+        if self.tokenizer.chat_template is not None:
+            try:
+                chat_text = self.tokenizer.apply_chat_template(
+                    [{"role": "user", "content": prompt}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=self.config.enable_thinking,
+                )
+            except TypeError:
+                # Older tokenizers may not support enable_thinking; fall back.
+                chat_text = self.tokenizer.apply_chat_template(
+                    [{"role": "user", "content": prompt}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            inputs = self.tokenizer(chat_text, return_tensors="pt", truncation=False)
+        else:
+            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=False)
 
-        if _TORCH_AVAILABLE and self.device.startswith("cuda"):
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        if _TORCH_AVAILABLE:
+            if self._use_device_map:
+                # device_map="auto" shards layers across GPUs but does NOT move
+                # inputs automatically. Move inputs to the device that holds the
+                # first layer (embed_tokens) so there is no device mismatch.
+                first_device = next(self.model.parameters()).device
+                inputs = {k: v.to(first_device) for k, v in inputs.items()}
+            elif self.device.startswith("cuda"):
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         gen_kwargs: dict = {
             "max_new_tokens": self.config.max_new_tokens,
@@ -272,13 +295,27 @@ class MemoryAdapter:
         if self.config.do_sample:
             gen_kwargs["temperature"] = self.config.temperature
             gen_kwargs["top_p"]       = self.config.top_p
+        else:
+            # Explicitly unset sampling params that the model's generation_config.json
+            # may carry as defaults. Without this, transformers warns that temperature/
+            # top_p/top_k are invalid flags for greedy decoding.
+            gen_kwargs["temperature"] = None
+            gen_kwargs["top_p"]       = None
+            gen_kwargs["top_k"]       = None
 
-        with (torch.no_grad() if _TORCH_AVAILABLE else _nullctx()):
+        with (torch.no_grad() if _TORCH_AVAILABLE else nullcontext()):
             out_ids = self.model.generate(**inputs, **gen_kwargs)
 
         # Decode only the newly generated tokens
         new_ids = out_ids[0][inputs["input_ids"].shape[-1]:]
-        return self.tokenizer.decode(new_ids, skip_special_tokens=True)
+        text = self.tokenizer.decode(new_ids, skip_special_tokens=True)
+
+        # Strip Qwen3-style thinking blocks if present (e.g. when enable_thinking=True
+        # or the model emits them regardless).
+        if "</think>" in text:
+            text = text.split("</think>", 1)[-1].lstrip("\n")
+
+        return text
 
     # ------------------------------------------------------------------
     # Prompt building
@@ -375,14 +412,3 @@ class MemoryAdapter:
             except Exception:
                 pass
         logger.info("[MemoryAdapter] Model unloaded.")
-
-
-# ---------------------------------------------------------------------------
-# Tiny context-manager stub for when torch is unavailable
-# ---------------------------------------------------------------------------
-
-class _nullctx:
-    def __enter__(self):
-        return self
-    def __exit__(self, *_):
-        pass

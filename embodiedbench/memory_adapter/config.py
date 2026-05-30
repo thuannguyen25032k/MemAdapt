@@ -33,7 +33,7 @@ class MemoryAdapterConfig:
     model_name_or_path: str = ""
     device: str = "auto"
     torch_dtype: str = "auto"
-    max_new_tokens: int = 1024
+    max_new_tokens: int = 2048
     temperature: float = 0.0
     top_p: float = 1.0
     do_sample: bool = False
@@ -41,6 +41,9 @@ class MemoryAdapterConfig:
     load_in_4bit: bool = False
     trust_remote_code: bool = True
     enabled: bool = True
+    # Qwen3-style thinking mode — set to False to suppress <think>...</think> output
+    # via apply_chat_template(enable_thinking=False). Ignored for OpenAI backend.
+    enable_thinking: bool = False
     # OpenAI backend (optional — set to use GPT instead of a local HF model)
     openai_model: str = ""        # e.g. "gpt-4o"
     openai_api_key: str = ""      # if empty, falls back to OPENAI_API_KEY env var
@@ -62,6 +65,7 @@ class MemoryAdapterConfig:
             "load_in_4bit":        self.load_in_4bit,
             "trust_remote_code":   self.trust_remote_code,
             "enabled":             self.enabled,
+            "enable_thinking":     self.enable_thinking,
             "openai_model":        self.openai_model,
             "openai_api_key":      self.openai_api_key,
         }

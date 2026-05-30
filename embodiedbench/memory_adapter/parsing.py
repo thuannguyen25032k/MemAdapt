@@ -44,11 +44,31 @@ def _split_into_sections(text: str) -> Dict[str, str]:
 
     Parses XML tags of the form <SECTION_NAME>...</SECTION_NAME> whose names
     match ALL_SECTIONS (FORESIGHT_PLAN, FEASIBILITY_CRITERIA, FALLBACK_STRATEGY).
+
+    If the closing tag of the last section is missing (truncated output), the
+    content from the opening tag to the end of the text is still captured.
     """
     sections: Dict[str, str] = {}
+    # First pass: well-formed sections with closing tags
     for m in re.finditer(r"<([A-Z_]+)>(.*?)</\1>", text, re.S):
         tag = m.group(1)
         sections[tag] = m.group(2).strip()
+
+    # Second pass: recover any section whose opening tag is present but closing
+    # tag is absent (truncated generation).
+    for tag in ALL_SECTIONS:
+        if tag in sections:
+            continue
+        m = re.search(rf"<{tag}>(.*)", text, re.S)
+        if m:
+            # Strip any trailing partial closing tag (e.g. "</FALL")
+            content = re.sub(r"</[A-Z_]*$", "", m.group(1)).strip()
+            if content:
+                sections[tag] = content
+                logger.warning(
+                    "Adapter output truncated: section <%s> has no closing tag. "
+                    "Content recovered up to end of output.", tag
+                )
     return sections
 
 
