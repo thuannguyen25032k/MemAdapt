@@ -251,10 +251,10 @@ print(output.fallback_strategy)
 See [docs/dataset_pipeline.md](docs/dataset_pipeline.md) for full details.
 
 ```bash
-# Build hindsight-annotated training dataset
-python embodiedbench/scripts/build_preference_dataset.py \
-    --episodes_dir data/episodes/eb_alfred \
-    --output_dir   data/memory_adapter_training/eb_alfred
+# Filter curated SFT targets from collected training records
+python -m embodiedbench.memory_adapter_training.filter_sft_targets \
+    --dataset-root memory_adapter_dataset \
+    --output-dir   memory_adapter_dataset/sft_filtered
 ```
 
 ---
@@ -335,28 +335,24 @@ See [docs/evaluation.md](docs/evaluation.md) for full details.
 
 ```bash
 python embodiedbench/main.py \
-    --config embodiedbench/configs/eb-alf.yaml \
-    --adapter_checkpoint outputs/memory_adapter_rl/grpo_qwen7b/checkpoint-final
+    env=eb-alf \
+    adapter_checkpoint=outputs/memory_adapter_rl/grpo_qwen7b/checkpoint-final
 ```
 
 ---
 
 ## Ablation Studies
 
-See [docs/experiments.md](docs/experiments.md) for full details.
+Set the `mode` field in `embodiedbench/configs/config.yaml` under `memory_experiment` to run different ablation conditions:
 
-| Condition | Description |
+| `mode` value | Description |
 |---|---|
-| `baseline` | No adapter — pure planner+critic with no memory |
+| `baseline` | No memory, no adapter — pure planner + critic |
 | `raw_memory` | Raw retrieved memory injected directly, no adaptation |
-| `sft_adapter` | Stage-1 SFT adapter only (no GRPO refinement) |
-| `grpo_adapter` | **Full MemAdapt system** — SFT + GRPO, dual injection |
-| `planner_only` | GRPO adapter injected into planner only |
-| `critic_only` | GRPO adapter injected into critic only |
-| `no_stale_penalty` | GRPO without stale-misuse penalty |
-| `no_xml_reward` | GRPO without XML validity reward |
-| `no_feasibility` | GRPO without feasibility reward |
-| `no_foresight` | GRPO without foresight reward |
+| `adapted_memory` | **Full MemAdapt system** — adapter injected into both planner and critic |
+| `adapted_memory_planner_only` | Adapter injected into planner only |
+| `adapted_memory_critic_only` | Adapter injected into critic only |
+| `adapted_memory_planner_critic` | Explicit dual injection (equivalent to `adapted_memory`) |
 
 ---
 
@@ -364,7 +360,7 @@ See [docs/experiments.md](docs/experiments.md) for full details.
 
 See [docs/reproducibility.md](docs/reproducibility.md) for full details.
 
-- All experiments use fixed seeds (`--seeds 1 2 3 4 5`)
+- All experiments use fixed random seeds (passed to PyTorch, NumPy, and Python `random`)
 - Config hashes are recorded in every `metadata.json`
 - Git commit hash is embedded in every run
 - Expected hardware: 1× A100 80 GB (training) / any CPU (evaluation stub)
@@ -389,7 +385,7 @@ MemAdapt/
 │   ├── evaluator/               # Original EmbodiedBench evaluators
 │   └── main.py                  # Top-level benchmark runner
 ├── docs/                        # Full documentation
-├── tests/                       # Pytest test suite (859 tests)
+├── tests/                       # Pytest test suite (812 tests)
 ├── conda_envs/                  # Conda environment specs
 ├── Docker/                      # Docker build files
 ├── setup.py
