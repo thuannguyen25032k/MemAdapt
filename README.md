@@ -97,6 +97,7 @@ receive.
 │           │  (frozen / any) │                 │  (frozen / any)  ││
 │           │                 │                 │                  ││
 │           │  foresight plan │                 │ feasibility check││
+│           │  fallback rules │                 │                  ││
 │           └────────┬────────┘                 └────────┬─────────┘│
 │                    └──────────────┬────────────────────┘          │
 │                                   ▼                               │
@@ -153,8 +154,10 @@ Benchmark Episodes  ──►  Hindsight Annotation
 │  Stage 2 — GRPO Refinement                                │
 │                                                           │
 │  • Optimises against task-execution feedback.             │
-│  • Rewards: stale-memory robustness, hallucination        │
-│    reduction, feasibility precision, replanning reduction.│
+│  • Rewards: task success/progress, output format          │
+│    validity, per-section quality (foresight, feasibility, │
+│    fallback); penalises replanning, invalid actions,      │
+│    and response repetition.                               │
 │  • Planner and critic remain frozen throughout.           │
 └──────────────────────────┬────────────────────────────────┘
                            │
@@ -173,8 +176,9 @@ uncertainty-aware summary that correctly identifies stale entries and safely gro
 both the planner and the critic.
 
 **Stage 2 — GRPO Refinement** sharpens robustness under distribution shift.  Rollouts
-are scored against execution outcomes, penalising stale-memory misuse, hallucinated
-object states, infeasible action sequences, and unnecessary replanning.  This stage does
+are scored with a composite reward covering task success/progress, structural format
+validity, and per-section content quality (foresight, feasibility, fallback), with
+penalties for excessive replanning, invalid actions, and repetition.  This stage does
 not train a planner — it trains the adapter to produce reasoning contexts that make the
 frozen planner and critic more reliable under changing environments.
 
