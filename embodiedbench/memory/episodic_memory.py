@@ -58,7 +58,8 @@ class EpisodeRecord:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     task_instruction: str = ""
     env_name: str = ""
-    scene_id: str = ""
+    task_type: str = ""              # e.g. eval_set name ("base", "spatial", ...); "" if unknown
+    scene_name: str = ""             # AI2-THOR sceneName (e.g. "FloorPlan3"); "" for Habitat
     final_status: str = "unknown"    # "success" | "failure" | "partial" | "unknown"
     steps: list = field(default_factory=list)            # list[dict]
     embedding: Optional[list] = None
@@ -100,7 +101,8 @@ class EpisodeRecord:
             metadata={
                 "episode_id":       self.id,
                 "env_name":         self.env_name,
-                "scene_id":         self.scene_id,
+                "task_type":        self.task_type,
+                "scene_name":       self.scene_name,
                 "status":           self.final_status,
             },
             embedding=self.embedding,
@@ -112,7 +114,8 @@ class EpisodeRecord:
             "id":               self.id,
             "task_instruction": self.task_instruction,
             "env_name":         self.env_name,
-            "scene_id":         self.scene_id,
+            "task_type":        self.task_type,
+            "scene_name":       self.scene_name,
             "final_status":     self.final_status,
             "steps":            list(self.steps),
             "embedding":        self.embedding,
@@ -126,7 +129,8 @@ class EpisodeRecord:
             id=d.get("id", str(uuid.uuid4())),
             task_instruction=d.get("task_instruction", ""),
             env_name=d.get("env_name", ""),
-            scene_id=d.get("scene_id", ""),
+            task_type=d.get("task_type", "") or d.get("scene_id", ""),
+            scene_name=d.get("scene_name", ""),
             final_status=d.get("final_status", "unknown"),
             steps=list(d.get("steps") or []),
             embedding=d.get("embedding"),
@@ -321,7 +325,8 @@ class EpisodicMemory(BaseMemory):
         final_status: str = "unknown",
         steps: Optional[list] = None,
         env_name: str = "",
-        scene_id: str = "",
+        task_type: str = "",
+        scene_name: str = "",
         episode_id: Optional[str] = None,
     ) -> Optional[EpisodeRecord]:
         """
@@ -345,7 +350,8 @@ class EpisodicMemory(BaseMemory):
             id=episode_id or str(uuid.uuid4()),
             task_instruction=task_instruction,
             env_name=env_name,
-            scene_id=scene_id,
+            task_type=task_type,
+            scene_name=scene_name,
             final_status=final_status,
             steps=cleaned_steps,
         )
@@ -424,10 +430,7 @@ class EpisodicMemory(BaseMemory):
             base_sim = _similarity(query_text_norm, normalize_text(ep.text_for_retrieval()), query_emb, ep.embedding)
 
             # 2. Scene / env match bonus
-            scene_bonus = 1.0 if (
-                (query.env_name and ep.env_name == query.env_name)
-                or (query.scene_id and ep.scene_id == query.scene_id)
-            ) else 0.0
+            scene_bonus = 1.0 if (query.scene_name and ep.scene_name == query.scene_name) else 0.0
 
             score = min(1.0, max(0.0,
                 0.9 * base_sim
@@ -438,7 +441,7 @@ class EpisodicMemory(BaseMemory):
         results.sort(key=lambda x: x[0], reverse=True)
         return [
             RetrievedMemory(item=ep.to_memory_item(), score=score, reason=_episode_reason(ep))
-            for score, ep in results[:top_k]
+            for score, ep in results[1:top_k+1]  # skip the top-1 match (too close to be useful as a "similar episode")
         ]
 
     # ------------------------------------------------------------------

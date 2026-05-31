@@ -1,0 +1,43 @@
+# conda_envs/environment_unsloth.yaml
+#
+# Dedicated environment for fine-tuning the Memory Adapter with the Unsloth
+# backend (config-selectable via model.use_unsloth: true).
+#
+# Target hardware: single NVIDIA GPU with CUDA 12.x (e.g. RTX 6000 Ada 48 GB).
+# Unsloth pulls a compatible torch/CUDA build automatically through pip.
+#
+# Create:
+#   conda env create -f conda_envs/environment_unsloth.yaml
+#   conda activate memadapt-unsloth
+#
+# Then install this repo (editable) so `embodiedbench.*` imports resolve:
+#   pip install -e .
+#
+# Train:
+#   python -m embodiedbench.memory_adapter_training.train_sft \
+#       --config embodiedbench/configs/memory_adapter_training/qwen3_14b_unsloth.yaml
+
+name: memadapt-unsloth
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      # --- Unsloth (installs a matching torch + CUDA build) ---
+      - unsloth
+      - unsloth_zoo
+      # --- HF training stack ---
+      - transformers>=4.46
+      - trl
+      - peft
+      - accelerate
+      - datasets
+      - bitsandbytes
+      - sentencepiece
+      - protobuf
+      # --- repo / training utilities ---
+      - pyyaml
+      - wandb
+      - numpy
+      - tqdm

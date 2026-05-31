@@ -15,7 +15,7 @@ sizes.
 ```bash
 python embodiedbench/scripts/train_memory_adapter_grpo.py \
     --config embodiedbench/configs/memory_adapter_rl/qwen_grpo.yaml \
-    --sft_checkpoint outputs/memory_adapter_training/qwen_qlora/checkpoint-final \
+    --sft_checkpoint outputs/memory_adapter_training/qwen3_14b/checkpoint-final \
     --output_dir     outputs/memory_adapter_rl/grpo_qwen7b
 ```
 
@@ -44,15 +44,15 @@ max_length: 2048
 
 # Reward weights (must match RLRewardWeights in memory_adapter_rl/config.py)
 reward_weights:
-  w_success:   1.0   # task success bonus
-  w_progress:  0.5   # task progress fraction
-  w_replan:    0.2   # replanning penalty (per event)
-  w_invalid:   0.3   # invalid action penalty (per occurrence)
-  w_stale:     0.4   # stale-memory misuse penalty
-  w_halluc:    0.5   # hallucinated object penalty
-  w_feasib:    0.3   # feasibility quality bonus
-  w_foresight: 0.2   # foresight quality bonus
-  w_xml:       0.5   # XML structure validity bonus
+  w_success:     1.0   # task success bonus (env rollout)
+  w_progress:    0.5   # task progress fraction (env rollout)
+  w_format:      0.5   # structural validity of the 3 required sections
+  w_foresight:   0.6   # FORESIGHT_PLAN quality bonus
+  w_feasibility: 0.6   # FEASIBILITY_CRITERIA quality bonus
+  w_fallback:    0.6   # FALLBACK_STRATEGY quality bonus
+  w_replan:      0.1   # replanning penalty (per event)
+  w_invalid:     0.1   # invalid action penalty (per occurrence)
+  w_repetition:  0.3   # degeneracy / repetition penalty
 
 # Training
 num_train_epochs: 1
@@ -66,10 +66,11 @@ save_steps: 100
 
 # GRPO-specific
 grpo:
-  num_generations: 8     # rollouts per prompt
-  group_size: 8          # group size for relative reward normalisation
+  num_generations: 8     # rollouts per prompt (group size)
   kl_beta: 0.04          # KL divergence coefficient
-  reward_normalization: true
+  temperature: 0.9       # rollout sampling temperature
+  top_p: 0.95            # nucleus sampling top-p
+  max_new_tokens: 512    # max tokens per completion
 
 # Logging
 report_to: "wandb"
@@ -83,32 +84,36 @@ The composite reward for a single adapter output is:
 $$
 R = w_s \cdot S
   + w_p \cdot P
+  + w_x \cdot X
+  + w_{fo} \cdot F_o
+  + w_{fe} \cdot F_e
+  + w_{fa} \cdot F_a
   - w_r \cdot R_p
   - w_i \cdot I
-  - w_k \cdot M_s
-  - w_h \cdot H
-  + w_f \cdot F
-  + w_q \cdot Q
-  + w_x \cdot X
+  - w_d \cdot D
 $$
 
 where the components are:
 
 | Symbol | Meaning | Type |
 |---|---|---|
-| $S$ | Task success | bonus |
-| $P$ | Task progress fraction | bonus |
-| $R_p$ | Replanning event count | penalty |
-| $I$ | Invalid action count | penalty |
-| $M_s$ | Stale-memory misuse count | penalty |
-| $H$ | Hallucinated object count | penalty |
-| $F$ | Feasibility quality score $\in [0,1]$ | bonus |
-| $Q$ | Foresight quality score $\in [0,1]$ | bonus |
-| $X$ | XML structure validity $\in \{0,1\}$ | bonus |
+| $S$ | Task success (env rollout) | bonus |
+| $P$ | Task progress fraction (env rollout) | bonus |
+| $X$ | Format validity: fraction of the 3 required sections present **and** non-empty $\in [0,1]$ | bonus |
+| $F_o$ | `FORESIGHT_PLAN` quality $\in [0,1]$ | bonus |
+| $F_e$ | `FEASIBILITY_CRITERIA` quality $\in [0,1]$ | bonus |
+| $F_a$ | `FALLBACK_STRATEGY` quality $\in [0,1]$ | bonus |
+| $R_p$ | Replanning event count (env rollout) | penalty |
+| $I$ | Invalid action count (env rollout) | penalty |
+| $D$ | Degeneracy / repetition penalty $\in [0,1]$ | penalty |
 
-Bonus-type components are in $[0, 1]$; penalty-type components are raw counts
-(unbounded), so the reward is not globally bounded — this is intentional to allow
-strong penalties for repeated stale-memory misuse.
+The three section-quality terms ($F_o, F_e, F_a$) are computed purely from the
+response text, giving a dense learning signal even when no environment is in the
+loop. The task-outcome terms ($S, P, R_p, I$) are zero when scoring offline
+prompts and are populated from environment rollout columns during online GRPO.
+Bonus and degeneracy components are in $[0, 1]$; the count penalties are raw
+(unbounded), so the reward is not globally bounded — intentional, to strongly
+discourage repeated invalid actions.
 
 ## Group Relative Normalisation
 

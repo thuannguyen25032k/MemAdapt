@@ -5,22 +5,43 @@ Consists of:
   - SymbolicCritic : verifies action-ID bounds and object availability in scene metadata.
   - VLMCritic      : uses the same VLM as the planner (different prompt) to assess whether
                      the single NEXT action is appropriate given the current visual state.
-                     The remaining follow-up steps are provided as context only (not judged).
+                     All other plan steps are context only (not judged).
   - DualCritic     : orchestrates both critics with the key rule that the FIRST action of
                      every plan is checked only by the SymbolicCritic (preventing an infinite
                      replanning loop where the VLM critic always demands replanning before
                      any action is ever executed).
+                     If the VLM critic rejects the same action VLM_REJECTION_THRESHOLD times
+                     consecutively, it is permanently disabled for the rest of the task.
 
 Prompts and few-shot examples are loaded from:
-  - embodiedbench/evaluator/config/system_prompts.py  →  alfred_critic_system_prompt
-  - embodiedbench/evaluator/config/critic_examples.json
+  - embodiedbench/evaluator/config/system_prompts.py  →  {env}_critic_system_prompt
+  - embodiedbench/evaluator/config/{env}_critic_examples.json
 """
 
 import re
 import json
 import os
 from embodiedbench.main import logger
-from embodiedbench.planner.planner_utils import local_image_to_data_url, fix_json
+from embodiedbench.planner.planner_utils import local_image_to_data_url
+
+try:
+    _MEMORY_AVAILABLE = True
+except Exception:  # pragma: no cover
+    _MEMORY_AVAILABLE = False
+
+# ---------------------------------------------------------------------------
+# Optional memory adapter imports
+# ---------------------------------------------------------------------------
+try:
+    from embodiedbench.memory_adapter.schemas import MemoryAdapterOutput
+    from embodiedbench.memory_adapter.adapter import build_critic_context as _build_critic_context
+    from embodiedbench.memory_adapter.utils import is_unsafe_adapter_output
+    _ADAPTER_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _ADAPTER_AVAILABLE = False
+    MemoryAdapterOutput = None  # type: ignore
+    def is_unsafe_adapter_output(prompt, **_): return False  # noqa: E731
+    def _build_critic_context(output): return ""  # noqa: E731
 
 # ---------------------------------------------------------------------------
 # Paths to external prompt / example files
@@ -36,6 +57,11 @@ def _load_critic_system_prompt(env: str) -> str:
     elif env.lower() == 'alfred':
         from embodiedbench.evaluator.config.system_prompts import alfred_critic_system_prompt
         return alfred_critic_system_prompt
+    elif env.lower() in ('eb_navigation', 'navigation', 'ebnav'):
+        from embodiedbench.evaluator.config.system_prompts import eb_navigation_critic_system_prompt
+        return eb_navigation_critic_system_prompt
+    logger.warning(f"[VLMCritic] No critic system prompt found for env '{env}'. Using empty prompt.")
+    return ""
 
 def _load_critic_examples(env: str) -> list:
     """Load few-shot critic examples from JSON file."""
@@ -57,9 +83,10 @@ def _format_examples(examples: list) -> str:
         lines.append(f"### Example {i}")
         lines.append(f"Instruction: {ex.get('instruction', '')}")
         lines.append(f"Next action: {ex.get('next_action', '')}")
-        followup = ex.get('followup_steps', '')
-        if followup:
-            lines.append(f"Follow-up steps (context):\n{followup}")
+        # Support both old key ('followup_steps') and new key ('full_plan')
+        plan_ctx = ex.get('full_plan', '') or ex.get('followup_steps', '')
+        if plan_ctx:
+            lines.append(f"Full plan context:\n{plan_ctx}")
         if ex.get('observation_description'):
             lines.append(f"Observation: {ex['observation_description']}")
         out = ex.get('output', {})
@@ -256,6 +283,99 @@ class VLMCritic:
         self._system_prompt_template = _load_critic_system_prompt(env)
         self._examples               = _load_critic_examples(env)
 
+        # --- optional memory ---
+        self._memory_manager   = None
+
+        # --- optional memory adapter ---
+        self.memory_adapter = None
+        self.last_adapted_memory_output = None
+        self.last_adapted_memory_prompt = ""
+
+        # --- metrics (injected externally via set_metrics) ---
+        self.metrics = None
+
+    # ------------------------------------------------------------------
+    # Memory interface
+    # ------------------------------------------------------------------
+    def set_memory_manager(self, memory_manager) -> None:
+        """Attach a MemoryManager instance. Safe to call even when memory is disabled."""
+        if _MEMORY_AVAILABLE and memory_manager is not None:
+            self._memory_manager = memory_manager
+
+    def set_memory_adapter(self, memory_adapter) -> None:
+        """Attach a MemoryAdapter instance. Safe no-op if adapter unavailable."""
+        self.memory_adapter = memory_adapter
+
+    def set_metrics(self, metrics) -> None:
+        """Attach a MemoryExperimentMetrics instance for counter tracking."""
+        self.metrics = metrics
+
+    def _memory_enabled(self) -> bool:
+        return (
+            _MEMORY_AVAILABLE
+            and self._memory_manager is not None
+            and self._memory_manager.is_enabled()
+        )
+
+    def _adapter_enabled(self) -> bool:
+        return (
+            _ADAPTER_AVAILABLE
+            and self.memory_adapter is not None
+            and getattr(getattr(self.memory_adapter, "config", None), "enabled", True)
+        )
+
+    def _get_critic_memory_prompt(
+        self,
+        instruction: str,
+        next_action_str: str,
+        full_plan: list,
+        current_index: int = 0,
+        info: dict = None,
+    ) -> str:
+        """
+        Return the critic memory context string.
+
+        Only use the memory adapter output if available and safe. If not, return an empty string.
+        """
+        if not self._memory_enabled():
+            return ""
+        try:
+            if self._adapter_enabled():
+                cached: MemoryAdapterOutput = getattr(self.memory_adapter, "last_output", None)
+                if cached is not None:
+                    adapted_prompt = _build_critic_context(cached)
+                    if is_unsafe_adapter_output(
+                        adapted_prompt, check_action_schema=True, max_chars=4000
+                    ):
+                        logger.debug(
+                            "[Memory] Critic cached adapter output deemed unsafe; "
+                            "not injecting memory context."
+                        )
+                        adapted_prompt = ""
+                        if self.metrics is not None:
+                            self.metrics.adapter_fallbacks += 1
+
+                    if adapted_prompt.strip():
+                        self.last_adapted_memory_output = cached
+                        self.last_adapted_memory_prompt = adapted_prompt
+                        if self.metrics is not None:
+                            self.metrics.adapter_critic_calls += 1
+                            self.metrics.adapted_critic_prompt_chars += len(adapted_prompt)
+                            self.metrics.critic_memory_injections += 1
+                            self.metrics.critic_memory_prompt_chars += len(adapted_prompt)
+                        return adapted_prompt
+                    else:
+                        logger.debug(
+                            "[Memory] Cached adapter critic context is empty; "
+                            "not injecting memory context."
+                        )
+                        if self.metrics is not None:
+                            self.metrics.adapter_fallbacks += 1
+            return ""
+        except Exception as e:
+            logger.warning(f"[Memory] VLMCritic._get_critic_memory_prompt failed: {e}")
+            return ""
+
     def _select_examples(self) -> list:
         """
         Return the subset of loaded examples to inject into the prompt.
@@ -272,41 +392,59 @@ class VLMCritic:
         return self._examples[:self.n_shot]
 
     def evaluate(self, image_path: str, instruction: str,
-                 remaining_actions: list) -> dict:
+                 full_plan: list, current_index: int, info: dict = None) -> dict:
         """
         Args:
-            image_path        : path to the current observation image.
-            instruction       : task instruction string.
-            remaining_actions : list of (action_id, action_name) tuples for steps
-                                that have NOT yet been executed.
-                                remaining_actions[0] is the NEXT action to judge;
-                                remaining_actions[1:] are follow-up steps shown as context.
+            image_path     : path to the current observation image.
+            instruction    : task instruction string.
+            full_plan      : list of (action_id, action_name) tuples for ALL steps in the
+                             current plan batch (the VLM planner's complete output).
+            current_index  : index into full_plan of the action to evaluate.
+                             full_plan[current_index] is the NEXT action to judge;
+                             full_plan[:current_index] are already-executed steps (context);
+                             full_plan[current_index+1:] are future steps (context).
+            info           : optional env info dict forwarded to memory query
+                             (observation_text, env_feedback, etc.).
         Returns:
             dict with keys: valid (bool), reason (str), suggestions (str)
         """
-        if not remaining_actions:
-            return {"valid": True, "reason": "No remaining actions to evaluate.",
+        if not full_plan or current_index >= len(full_plan):
+            return {"valid": True, "reason": "No action to evaluate.",
                     "suggestions": "", "_prompt": ""}
 
-        # Split: first item is the judgment target; rest are context only
-        next_aid, next_aname = remaining_actions[0]
+        # The action being judged
+        next_aid, next_aname = full_plan[current_index]
         next_action_str = f"action id {next_aid}, {next_aname}"
 
-        if len(remaining_actions) > 1:
-            followup_str = '\n'.join(
-                f"  Step {i + 1}: action id {aid}, {aname}"
-                for i, (aid, aname) in enumerate(remaining_actions[1:])
-            )
-        else:
-            followup_str = "(none — this is the last planned step)"
+        # Build full-plan context block, marking the evaluated step
+        plan_lines = []
+        for i, (aid, aname) in enumerate(full_plan):
+            if i < current_index:
+                plan_lines.append(f"  Step {i + 1} (already executed): action id {aid}, {aname}")
+            elif i == current_index:
+                plan_lines.append(f"  Step {i + 1} → EVALUATE THIS: action id {aid}, {aname}")
+            else:
+                plan_lines.append(f"  Step {i + 1} (upcoming): action id {aid}, {aname}")
+        full_plan_str = "\n".join(plan_lines) if plan_lines else "(no plan steps)"
 
         examples_str = _format_examples(self._select_examples())
         prompt = self._system_prompt_template.format(
             instruction=instruction,
             next_action=next_action_str,
-            followup_steps=followup_str,
+            full_plan=full_plan_str,
             examples=examples_str,
         )
+
+        # --- memory injection (prepend if available) ---
+        memory_prompt = self._get_critic_memory_prompt(
+            instruction=instruction,
+            next_action_str=next_action_str,
+            full_plan=full_plan,
+            current_index=current_index,
+            info=info,
+        )
+        if memory_prompt:
+            prompt = memory_prompt + "\n\n" + prompt
 
         # Build message — optionally include the current image
         if self.language_only:
@@ -328,21 +466,26 @@ class VLMCritic:
         try:
             out = self.model.respond(messages)
             result = json.loads(out)
-            return {
+            eval_result = {
                 "valid":       bool(result.get("valid", True)),
                 "reason":      str(result.get("reason", "")),
                 "suggestions": str(result.get("suggestions", "")),
                 "_prompt":     prompt,
             }
-        except (json.JSONDecodeError, Exception) as e:
+        except Exception as e:
             logger.warning(f"VLM critic JSON parse failed ({e}); trying regex fallback.")
             fallback = self._regex_fallback(out)
             if fallback is not None:
                 fallback["_prompt"] = prompt
-                return fallback
-            logger.warning("VLM critic regex fallback also failed. Defaulting to valid=True.")
-            return {"valid": True, "reason": "Critic evaluation failed; defaulting to valid.",
-                    "suggestions": "", "_prompt": prompt}
+                eval_result = fallback
+            else:
+                logger.warning("VLM critic regex fallback also failed. Defaulting to valid=True.")
+                eval_result = {"valid": True, "reason": "Critic evaluation failed; defaulting to valid.",
+                               "suggestions": "", "_prompt": prompt}
+
+        if self.metrics is not None and not eval_result.get("valid", True):
+            self.metrics.critic_rejections += 1
+        return eval_result
 
     # ------------------------------------------------------------------
     # Regex fallback parser for malformed critic output
@@ -394,8 +537,8 @@ class DualCritic:
         (Prevents an infinite loop where VLM critic always rejects the first
          action before anything is ever executed.)
       - is_first_step=False → run SymbolicCritic first; if it passes, run VLMCritic.
-        VLMCritic evaluates ONLY the single next action (remaining_actions[0]),
-        using the rest of the plan as context to understand intent.
+        VLMCritic evaluates ONLY the single next action (full_plan[current_index]),
+        using the full plan (already-executed + upcoming steps) as context.
 
     Returns a unified result dict with a human-readable `feedback` field that
     the planner can directly append to its next prompt.
@@ -404,12 +547,37 @@ class DualCritic:
     tree-structured JSON log via save_episode_critic_log().
     """
 
+    # Number of consecutive VLM rejections of the same action before VLM is bypassed
+    VLM_REJECTION_THRESHOLD = 3
+
     def __init__(self, symbolic_critic: AlfredSymbolicCritic, vlm_critic: VLMCritic,
                  log_path: str = None):
         self.symbolic  = symbolic_critic
         self.vlm       = vlm_critic
         self.log_path  = log_path   # set externally (e.g. env.log_path) to enable logging
         self._episode_critic_records: list = []   # filled by _record_evaluation()
+        # Maps action_str → number of consecutive VLM rejections for that action
+        self._vlm_consecutive_rejections: dict = {}
+        # Once True, VLM critic is permanently disabled for the rest of this task
+        self._vlm_task_disabled: bool = False
+
+    # ------------------------------------------------------------------
+    # Memory interface — delegates to the inner VLMCritic
+    # ------------------------------------------------------------------
+    def set_memory_manager(self, memory_manager) -> None:
+        """Pass a MemoryManager through to the VLMCritic. Safe no-op if unavailable."""
+        if self.vlm is not None and hasattr(self.vlm, "set_memory_manager"):
+            self.vlm.set_memory_manager(memory_manager)
+
+    def set_memory_adapter(self, memory_adapter) -> None:
+        """Pass a MemoryAdapter through to the VLMCritic. Safe no-op if unavailable."""
+        if self.vlm is not None and hasattr(self.vlm, "set_memory_adapter"):
+            self.vlm.set_memory_adapter(memory_adapter)
+
+    def set_metrics(self, metrics) -> None:
+        """Pass a MemoryExperimentMetrics instance through to the VLMCritic."""
+        if self.vlm is not None and hasattr(self.vlm, "set_metrics"):
+            self.vlm.set_metrics(metrics)
 
     # ------------------------------------------------------------------
     # Episode lifecycle
@@ -417,6 +585,12 @@ class DualCritic:
     def reset(self):
         """Clear accumulated records at the start of a new episode."""
         self._episode_critic_records = []
+        self._vlm_consecutive_rejections = {}
+        self._vlm_task_disabled = False
+        # Clear cached adapter state on the inner VLM critic to prevent cross-episode leakage
+        if self.vlm is not None:
+            self.vlm.last_adapted_memory_output = None
+            self.vlm.last_adapted_memory_prompt = ""
 
     # ------------------------------------------------------------------
     # Internal: record one evaluation call
@@ -428,7 +602,8 @@ class DualCritic:
                            action_id: int,
                            action_str: str,
                            image_path: str,
-                           remaining_actions: list,
+                           full_plan: list,
+                           current_index: int,
                            is_first_step: bool,
                            result: dict,
                            vlm_prompt: str = None,
@@ -443,38 +618,33 @@ class DualCritic:
             action_id          : action ID being evaluated.
             action_str         : human-readable action string.
             image_path         : path to the observation image used.
-            remaining_actions  : list of (id, name) tuples for un-executed steps.
-                                 remaining_actions[0] is the next action (judgment target);
-                                 remaining_actions[1:] are follow-up steps (context only).
+            full_plan          : complete list of (id, name) tuples for the current plan.
+            current_index      : index of the action being evaluated within full_plan.
+                                 full_plan[current_index] is the judgment target;
+                                 full_plan[:current_index] are already-executed steps;
+                                 full_plan[current_index+1:] are follow-up steps (context).
             is_first_step      : whether VLM critic was skipped.
             result             : full dict returned by evaluate().
             vlm_prompt         : the prompt string sent to the VLM (optional; may be None
                                  if VLM was skipped).
         """
-        # Split remaining_actions into judgment target and follow-up context
+        # Split full_plan into judgment target and context
         next_action = (
-            {"action_id": remaining_actions[0][0], "action_name": remaining_actions[0][1]}
-            if remaining_actions else None
+            {"action_id": full_plan[current_index][0], "action_name": full_plan[current_index][1]}
+            if full_plan and current_index < len(full_plan) else None
         )
-        followup_steps = [
-            {"step": i + 1, "action_id": aid, "action_name": aname}
-            for i, (aid, aname) in enumerate(remaining_actions[1:])
-        ]
 
         record = {
             "env_step":            env_step,
             "planner_step":        planner_step,
             "action_step_in_plan": action_step_in_plan,
             "input": {
-                "image":         image_path,
-                "action_id":     action_id,
-                "action_str":    action_str,
-                "is_first_step": is_first_step,
-                # next_action is always remaining_actions[0] — what VLMCritic judges
-                "next_action":   next_action,
-                # followup_steps are remaining_actions[1:] — shown to VLM as context only
-                "followup_steps": followup_steps,
-                # objects currently held by the robot (from inventoryObjects metadata)
+                "image":             image_path,
+                "action_id":         action_id,
+                "action_str":        action_str,
+                "is_first_step":     is_first_step,
+                "next_action":       next_action,
+                "full_plan":         [{"action_id": aid, "action_name": aname} for aid, aname in full_plan],
                 "inventory_objects": [obj.get('objectType', obj.get('objectId', ''))
                                       for obj in (inventory_objects or [])],
             },
@@ -485,12 +655,8 @@ class DualCritic:
             },
             "vlm_critic": (
                 {
-                    "ran": False,
-                    "skipped_reason": (
-                        "first step — VLM critic skipped to prevent infinite replanning loop"
-                        if is_first_step else
-                        "symbolic critic already rejected"
-                    ),
+                    "ran":            False,
+                    "skipped_reason": result.get("vlm_skipped_reason", "unknown"),
                 }
                 if result["vlm_result"] is None else
                 {
@@ -530,12 +696,13 @@ class DualCritic:
                 "env_step", "planner_step", "action_step_in_plan",
                 "input": {
                   "image", "action_id", "action_str", "is_first_step",
-                  "next_action":    {"action_id", "action_name"},   ← VLM judgment target
-                  "followup_steps": [{"step", "action_id", "action_name"}, ...]  ← context only
+                  "next_action":       {"action_id", "action_name"},
+                  "full_plan":         [{"action_id", "action_name"}, ...],
+                  "inventory_objects": [str, ...]
                 },
                 "symbolic_critic": {"ran", "valid", "reason"},
                 "vlm_critic":      {"ran", "prompt", "valid", "reason", "suggestions"}
-                                 | {"ran": false, "skipped_reason"},
+                                 | {"ran": false, "skipped_reason": str},
                 "final_decision":  {"valid", "feedback"}
               }, ...
             ]
@@ -571,7 +738,6 @@ class DualCritic:
         logger.info(f"Critic log saved to {log_file} "
                     f"({total} evaluations, {rejections} rejections)")
 
-
     def evaluate(self,
                  action_id: int,
                  action_str: str,
@@ -579,22 +745,31 @@ class DualCritic:
                  num_actions: int,
                  image_path: str,
                  instruction: str,
-                 remaining_actions: list,
+                 full_plan: list,
+                 current_index: int,
                  is_first_step: bool = False,
-                 inventory_objects: list = None) -> dict:
+                 inventory_objects: list = None,
+                 info: dict = None) -> dict:
         """
         Args:
-            action_id        : ID of the action about to be executed.
-            action_str       : human-readable action string.
-            scene_objects    : env.last_event.metadata['objects'] list.
-            num_actions      : total size of the current action space.
-            image_path       : path to the latest saved observation image.
-            instruction      : task instruction string.
-            remaining_actions: list of (action_id, action_name) for all steps
-                               not yet executed (including the current one).
-            is_first_step    : if True, VLM critic is skipped.
+            action_id      : ID of the action about to be executed.
+            action_str     : human-readable action string.
+            scene_objects  : env.last_event.metadata['objects'] list.
+            num_actions    : total size of the current action space.
+            image_path     : path to the latest saved observation image.
+            instruction    : task instruction string.
+            full_plan      : complete list of (action_id, action_name) for ALL steps in
+                             the current plan batch (the VLM planner's full output).
+            current_index  : index of the action being evaluated within full_plan.
+                             full_plan[current_index] is the judgment target;
+                             full_plan[:current_index] are already-executed steps;
+                             full_plan[current_index+1:] are future steps (context).
+            is_first_step  : if True, VLM critic is skipped.
             inventory_objects: env.last_event.metadata['inventoryObjects'] list
                                (objects currently held by the robot).
+            info           : optional env info dict (observation_text, env_feedback, …)
+                             forwarded to VLMCritic memory query. Existing callers that
+                             omit this argument are unaffected.
 
         Returns:
             dict:
@@ -614,10 +789,11 @@ class DualCritic:
         if not sym_result["valid"]:
             logger.info(f"[SymbolicCritic] INVALID — {sym_result['reason']}")
             return {
-                "valid":           False,
-                "symbolic_result": sym_result,
-                "vlm_result":      None,
-                "vlm_prompt":      None,
+                "valid":            False,
+                "symbolic_result":  sym_result,
+                "vlm_result":       None,
+                "vlm_skipped_reason": "symbolic critic rejected",
+                "vlm_prompt":       None,
                 "feedback": (f"[Symbolic Critic] The next action '{action_str}' "
                              f"is not executable: {sym_result['reason']}"),
             }
@@ -627,38 +803,79 @@ class DualCritic:
             logger.debug("[DualCritic] First step — VLM critic skipped to prevent "
                          "infinite replanning loop.")
             return {
-                "valid":           True,
-                "symbolic_result": sym_result,
-                "vlm_result":      None,
-                "vlm_prompt":      None,
-                "feedback":        "",
+                "valid":            True,
+                "symbolic_result":  sym_result,
+                "vlm_result":       None,
+                "vlm_skipped_reason": "first step — VLM critic skipped to prevent infinite replanning loop",
+                "vlm_prompt":       None,
+                "feedback":         "",
             }
 
-        vlm_result = self.vlm.evaluate(image_path, instruction, remaining_actions)
+        # Permanently skip VLM critic for the rest of the task if threshold was hit
+        if self._vlm_task_disabled:
+            logger.debug("[DualCritic] VLM critic is permanently disabled for this task — auto-approving.")
+            return {
+                "valid":            True,
+                "symbolic_result":  sym_result,
+                "vlm_result":       None,
+                "vlm_skipped_reason": "VLM critic permanently disabled for this task",
+                "vlm_prompt":       None,
+                "feedback":         "",
+            }
+
+        vlm_result = self.vlm.evaluate(
+            image_path, instruction, full_plan, current_index, info=info
+        )
         vlm_prompt = vlm_result.pop("_prompt", None)   # extract before storing result
         if not vlm_result["valid"]:
-            next_action_str = (f"action id {remaining_actions[0][0]}, "
-                               f"{remaining_actions[0][1]}"
-                               if remaining_actions else "unknown")
+            # Track consecutive rejections for this action
+            reject_count = self._vlm_consecutive_rejections.get(action_str, 0) + 1
+            self._vlm_consecutive_rejections[action_str] = reject_count
+
+            if reject_count >= self.VLM_REJECTION_THRESHOLD:
+                logger.warning(
+                    f"[VLMCritic] Action '{action_str}' has been rejected "
+                    f"{reject_count} times consecutively — permanently disabling "
+                    f"VLM critic for the rest of this task."
+                )
+                self._vlm_task_disabled = True
+                self._vlm_consecutive_rejections.clear()
+                return {
+                    "valid":            True,
+                    "symbolic_result":  sym_result,
+                    "vlm_result":       None,
+                    "vlm_skipped_reason": f"VLM critic disabled after {reject_count} consecutive rejections",
+                    "vlm_prompt":       vlm_prompt,
+                    "feedback":         "",
+                }
+
+            next_action_str = (f"action id {full_plan[current_index][0]}, "
+                               f"{full_plan[current_index][1]}"
+                               if full_plan and current_index < len(full_plan) else "unknown")
             feedback = (f"[VLM Critic] The next action '{next_action_str}' "
                         f"is not appropriate: {vlm_result['reason']}")
             if vlm_result["suggestions"]:
                 feedback += f" Suggestions: {vlm_result['suggestions']}"
-            logger.info(f"[VLMCritic] INVALID — {vlm_result['reason']}")
+            logger.info(f"[VLMCritic] INVALID (consecutive rejection #{reject_count}) — {vlm_result['reason']}")
             return {
-                "valid":           False,
-                "symbolic_result": sym_result,
-                "vlm_result":      vlm_result,
-                "vlm_prompt":      vlm_prompt,
-                "feedback":        feedback,
+                "valid":            False,
+                "symbolic_result":  sym_result,
+                "vlm_result":       vlm_result,
+                "vlm_skipped_reason": None,
+                "vlm_prompt":       vlm_prompt,
+                "feedback":         feedback,
             }
+
+        # VLM approved — reset consecutive rejection counter for this action
+        self._vlm_consecutive_rejections.pop(action_str, None)
 
         logger.debug(f"[DualCritic] VALID — symbolic: {sym_result['reason']} | "
                      f"vlm: {vlm_result['reason']}")
         return {
-            "valid":           True,
-            "symbolic_result": sym_result,
-            "vlm_result":      vlm_result,
-            "vlm_prompt":      vlm_prompt,
-            "feedback":        "",
+            "valid":            True,
+            "symbolic_result":  sym_result,
+            "vlm_result":       vlm_result,
+            "vlm_skipped_reason": None,
+            "vlm_prompt":       vlm_prompt,
+            "feedback":         "",
         }

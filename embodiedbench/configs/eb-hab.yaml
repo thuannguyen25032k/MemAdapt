@@ -5,10 +5,17 @@ model_type: remote
 language_only: False
 eval_sets: []
 chat_history: False
-n_shots: 10
+n_shots: 1
 multistep: False
 resolution: 500
 exp_name: baseline
 env_feedback: True
 tp: 1
 record_video: False
+# --- Dual-Critic ---
+use_critic: True           # set to True to enable the dual-critic module
+
+# --- Video / logging ---
+video_fps: 2                # frames-per-second for saved episode MP4 videos
+log_level: INFO             # DEBUG for verbose planner/critic prompt logging
+critic_n_shot: 0        # null → uses n_shots value (10); set 0 to disable examples

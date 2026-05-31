@@ -5,7 +5,7 @@ down_sample_ratio: 1
 language_only: False
 eval_sets: []
 chat_history: False
-n_shots: 10
+n_shots: 5
 detection_box: False
 multistep: False
 resolution: 500

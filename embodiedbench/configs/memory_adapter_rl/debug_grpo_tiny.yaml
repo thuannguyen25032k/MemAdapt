@@ -1,0 +1,79 @@
+# configs/memory_adapter_rl/debug_grpo_tiny.yaml
+# Tiny GRPO config for fast local debugging / CI (no GPU required)
+# ----------------------------------------------------------------
+run_name: memadapt_grpo_debug
+algorithm: grpo
+seed: 0
+
+model_name_or_path: Qwen/Qwen2.5-0.5B-Instruct
+trust_remote_code: true
+torch_dtype: float32
+load_in_4bit: false
+
+lora_r: 4
+lora_alpha: 8
+lora_dropout: 0.0
+lora_target_modules:
+  - q_proj
+  - v_proj
+
+train_data_path: ""
+val_data_path: ""
+max_prompt_length: 256
+max_length: 512
+
+output_dir: outputs/memory_adapter_rl/grpo_debug
+num_train_epochs: 1
+learning_rate: 1.0e-4
+per_device_train_batch_size: 2   # must be divisible by grpo.num_generations (2)
+per_device_eval_batch_size: 1
+gradient_accumulation_steps: 1
+warmup_ratio: 0.0
+lr_scheduler_type: constant
+bf16: false
+fp16: false
+gradient_checkpointing: false
+logging_steps: 1
+eval_steps: 10
+save_steps: 10
+save_total_limit: 1
+dataloader_num_workers: 0
+
+reward_weights:
+  w_success: 1.0
+  w_progress: 0.5
+  w_format: 0.5
+  w_foresight: 0.6
+  w_feasibility: 0.6
+  w_fallback: 0.6
+  w_replan: 0.1
+  w_invalid: 0.1
+  w_repetition: 0.3
+
+grpo:
+  num_generations: 2
+  kl_beta: 0.04
+  temperature: 1.0
+  top_p: 1.0
+  max_new_tokens: 64
+  rollout_batch_size: 1
+  advantage_epsilon: 1.0e-8
+
+report_to: none
+log_level: DEBUG
+eval_format_validity: true
+num_eval_samples: 2
+
+# Weights & Biases
+wandb:
+  enabled: false
+  project: "memadapt-rl"
+  entity: null
+  group: null
+  tags: []
+  log_model: false
+  log_examples: true
+  mode: "online"
+  save_code: true
+  resume: false
+  run_id: null

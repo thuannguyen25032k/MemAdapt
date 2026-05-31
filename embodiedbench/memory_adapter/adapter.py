@@ -16,7 +16,7 @@ from typing import Any, Optional, Union
 
 from embodiedbench.memory_adapter.config import MemoryAdapterConfig
 from embodiedbench.memory_adapter.schemas import MemoryAdapterInput, MemoryAdapterOutput
-from embodiedbench.memory_adapter.prompts import build_adapter_prompt
+from embodiedbench.memory_adapter.prompts import build_adapter_prompt, messages_to_text
 from embodiedbench.memory_adapter.parsing import parse_adapter_output
 
 logger = logging.getLogger("EB_logger")
@@ -141,14 +141,14 @@ class MemoryAdapter:
         self._use_device_map: bool = False  # set True when device_map="auto" is active
         # Cache the last adapt() result so the critic can reuse it without a second inference.
         self.last_output: Optional[MemoryAdapterOutput] = None
-        # Cached OpenAI client (created lazily on first generate() call).
-        self._openai_client = None
+        # Cached API client (created lazily on first generate() call).
+        self._api_client = None
         # Set externally (e.g. env.log_path) to enable per-call debug logs.
         self.log_path: Optional[str] = None
         self._episode_index: int = 0   # incremented at the start of each episode
         self._log_call_index: int = 0  # resets to 0 each episode
 
-        if self.config.enabled and self.config.model_name_or_path and not self.config.openai_model:
+        if self.config.enabled and self.config.model_name_or_path and not self.config.api_model:
             self._load_model()
 
     # ------------------------------------------------------------------
@@ -214,39 +214,37 @@ class MemoryAdapter:
     # Core generation
     # ------------------------------------------------------------------
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, messages: "list[dict]") -> str:
         """
-        Run the causal-LM on the prompt and return the generated text.
+        Run the causal-LM on the chat ``messages`` (system + user) and return
+        the generated text.
 
-        Override this method in subclasses / mocks for unit testing.
+        ``messages`` is a list of ``{"role", "content"}`` dicts as produced by
+        ``build_adapter_prompt``. Override this method in subclasses / mocks for
+        unit testing.
         """
-        # --- OpenAI backend ---
-        if self.config.openai_model:
+        # --- API backend (any OpenAI-compatible server: OpenAI, lmdeploy, vLLM, …) ---
+        if self.config.api_model:
             try:
                 from openai import OpenAI as _OpenAI
             except ImportError:
-                raise ImportError(
-                    "openai package is required for OpenAI backend. "
-                    "Install with: pip install openai"
-                )
-            # Cache client on first use to avoid recreating it every call
-            if self._openai_client is None:
-                api_key = self.config.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
-                self._openai_client = _OpenAI(api_key=api_key)
+                raise ImportError("openai package required. Install with: pip install openai")
+            if self._api_client is None:
+                api_key = self.config.api_key or os.environ.get("OPENAI_API_KEY", "EMPTY")
+                client_kwargs: dict = {"api_key": api_key}
+                if self.config.api_base_url:
+                    client_kwargs["base_url"] = self.config.api_base_url
+                self._api_client = _OpenAI(**client_kwargs)
 
-            # Reasoning models (o1, o3, o4-*) do not support the
-            # `temperature` parameter; newer models (gpt-4.1, gpt-5*)
-            # require `max_completion_tokens` instead of `max_tokens`.
-            _model = self.config.openai_model or ""
-            _is_reasoning = _model.startswith(("o1", "o3", "o4"))
+            _is_reasoning = self.config.api_model.startswith(("o1", "o3", "o4"))
             _create_kwargs: dict = {
-                "model": _model,
-                "messages": [{"role": "user", "content": prompt}],
+                "model": self.config.api_model,
+                "messages": messages,
                 "max_completion_tokens": self.config.max_new_tokens,
             }
             if not _is_reasoning:
                 _create_kwargs["temperature"] = self.config.temperature
-            resp = self._openai_client.chat.completions.create(**_create_kwargs)
+            resp = self._api_client.chat.completions.create(**_create_kwargs)
             return resp.choices[0].message.content or ""
 
         # --- Local HuggingFace backend ---
@@ -257,12 +255,12 @@ class MemoryAdapter:
             )
 
         # Use apply_chat_template when available (required for Qwen3 and most
-        # instruction-tuned models) so the prompt is properly formatted and
-        # enable_thinking is respected.
+        # instruction-tuned models) so the system/user turns are properly
+        # formatted and enable_thinking is respected.
         if self.tokenizer.chat_template is not None:
             try:
                 chat_text = self.tokenizer.apply_chat_template(
-                    [{"role": "user", "content": prompt}],
+                    messages,
                     tokenize=False,
                     add_generation_prompt=True,
                     enable_thinking=self.config.enable_thinking,
@@ -270,13 +268,15 @@ class MemoryAdapter:
             except TypeError:
                 # Older tokenizers may not support enable_thinking; fall back.
                 chat_text = self.tokenizer.apply_chat_template(
-                    [{"role": "user", "content": prompt}],
+                    messages,
                     tokenize=False,
                     add_generation_prompt=True,
                 )
             inputs = self.tokenizer(chat_text, return_tensors="pt", truncation=False)
         else:
-            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=False)
+            # No chat template: flatten the messages into a single string.
+            chat_text = messages_to_text(messages)
+            inputs = self.tokenizer(chat_text, return_tensors="pt", truncation=False)
 
         if _TORCH_AVAILABLE:
             if self._use_device_map:
@@ -321,7 +321,7 @@ class MemoryAdapter:
     # Prompt building
     # ------------------------------------------------------------------
 
-    def build_prompt(self, adapter_input: MemoryAdapterInput) -> str:
+    def build_prompt(self, adapter_input: MemoryAdapterInput) -> "list[dict]":
         return build_adapter_prompt(adapter_input, self.config)
 
     # ------------------------------------------------------------------
@@ -331,7 +331,7 @@ class MemoryAdapter:
     def _save_log(
         self,
         adapter_input: MemoryAdapterInput,
-        prompt: str,
+        messages: "list[dict]",
         raw: str,
         output: MemoryAdapterOutput,
     ) -> None:
@@ -352,7 +352,7 @@ class MemoryAdapter:
                 "call_index": self._log_call_index,
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "input": adapter_input.to_dict(),
-                "prompt": prompt,
+                "messages": messages,
                 "raw_output": raw,
                 "parsed_output": output.to_dict(),
             }
@@ -379,15 +379,15 @@ class MemoryAdapter:
             )
 
         try:
-            prompt = self.build_prompt(adapter_input)
-            raw    = self.generate(prompt)
-            output = parse_adapter_output(raw)
+            messages = self.build_prompt(adapter_input)
+            raw      = self.generate(messages)
+            output   = parse_adapter_output(raw)
         except Exception as e:
             logger.warning(f"[MemoryAdapter] adapt() failed: {e}")
             return MemoryAdapterOutput(raw_output="", parse_error=str(e))
 
         # Save debug log before caching
-        self._save_log(adapter_input, prompt, raw, output)
+        self._save_log(adapter_input, messages, raw, output)
         self.last_output = output
         
         return output
@@ -406,6 +406,7 @@ class MemoryAdapter:
         """Delete model/tokenizer and free CUDA memory if available."""
         self.model     = None
         self.tokenizer = None
+        self._api_client = None
         if _TORCH_AVAILABLE:
             try:
                 torch.cuda.empty_cache()

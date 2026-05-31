@@ -216,10 +216,10 @@ class EBHabEnv(gym.Env):
                 if self.is_holding:
                     env_feedback += ' Robot cannot pick any object when holding something. Please place the object before picking something.'
                 else:
-                    env_feedback += ' Robot cannot pick any object that is not near the robot. Navigate to other place to find the object.'
+                    env_feedback += ' Robot cannot pick any object that is not near the robot. Navigate to other place to find the object first.'
             elif 'place' in info['action'] and self.feedback_verbosity:
                 if self.is_holding:
-                    env_feedback += ' Robot cannot place any object that is not near the robot. Navigate to other place to find the object.'
+                    env_feedback += ' Robot cannot place an object here. Navigate closer to the target receptacle.'
                 else:
                     env_feedback += ' Robot cannot place any object when not holding something. Please pick the object before place it.'
             elif 'open' in info['action'] and self.feedback_verbosity:

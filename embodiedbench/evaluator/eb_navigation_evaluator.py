@@ -322,8 +322,6 @@ class EB_NavigationEvaluator():
                 info=info,
                 env_name="navigation",
                 task_type=str(self.eval_set),
-                episode_idx=getattr(self.env, '_current_episode_num', None),
-                extra_metadata={"model_name": self.model_name, "eval_set": str(self.eval_set)},
             )
             save_memory_if_configured(self.memory_manager, self.config, on_episode_end=True)
 

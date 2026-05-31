@@ -38,8 +38,8 @@ This document describes the memory architecture introduced in MemAdapt, covering
                                   ┌────────────┴──────────────┐
                                   ▼                            ▼
                            VLM Planner                   VLM Critic
-                         (ADAPTED_CONTEXT             (FEASIBILITY_CRITERIA
-                          + FORESIGHT_PLAN)            from adapter)
+                         (FORESIGHT_PLAN              (FEASIBILITY_CRITERIA
+                          + FALLBACK_STRATEGY)         from adapter)
 ```
 
 The memory system is **fully independent** of the simulator and model API. It uses pure Python + NumPy and stores data as JSON/JSONL files.
@@ -136,8 +136,8 @@ Do not copy memory text into the final action output.
 > evaluation without a trained adapter).  When the Memory Adapter is enabled
 > (`memory_adapter.enabled = true`), retrieved memories are first passed through the
 > `MemoryAdapter` before reaching the planner or critic.  The adapter transforms them
-> into uncertainty-aware `ADAPTED_CONTEXT`, `FORESIGHT_PLAN`, and
-> `FEASIBILITY_CRITERIA` blocks, which replace the raw memory prompt.  See
+> into `FORESIGHT_PLAN`, `FEASIBILITY_CRITERIA`, and `FALLBACK_STRATEGY`
+> blocks, which replace the raw memory prompt.  See
 > [memory_adapter.md](memory_adapter.md) for details.
 
 ---
@@ -180,7 +180,6 @@ memory:
   top_k_per_memory: 5
   temporal_max_steps: 20
   use_embeddings: true
-  allow_stale_warnings: true
   max_context_chars: 4000
   max_section_chars: 1200
   auto_save: false
@@ -253,12 +252,11 @@ MemoryAdapter.adapt(MemoryAdapterInput)
      │  (Hugging Face CausalLM generates structured output)
      ▼
 MemoryAdapterOutput
-   ├── planner_context  → injected into VLMPlanner prompt
-   ├── critic_context   → injected into VLMCritic prompt
-   ├── foresight_plan
-   ├── feasibility_criteria
-   ├── stale_memory_assessment
-   └── confidence
+   ├── foresight_plan        → planner context (via build_planner_context)
+   ├── feasibility_criteria  → critic context  (via build_critic_context)
+   ├── fallback_strategy     → planner context (via build_planner_context)
+   ├── raw_output
+   └── parse_error
 ```
 
 ### Enabling via `config.yaml`
@@ -392,7 +390,6 @@ pytest tests/memory_adapter/test_memory_experiment_modes.py -v
 | `adapter_calls` | Sum of both adapter paths |
 | `adapter_fallbacks` | On code-fence / empty / exception in adapter output |
 | `stale_warning_count` | `len(ctx.stale_memory_warnings)` after retrieve |
-| `planning_hint_count` | `len(ctx.planning_hints)` after retrieve |
 | `feasibility_constraint_count` | `len(ctx.feasibility_constraints)` after retrieve |
 | `planner_memory_prompt_chars` | `len(prompt)` for each planner injection |
 | `critic_memory_prompt_chars` | `len(prompt)` for each critic injection |
@@ -451,10 +448,9 @@ pytest tests/memory_adapter/test_memory_metrics.py -v
   "observation_or_state": "<raw MemoryContext text>",
   "retrieved_memory":     "<planner memory prompt>",
   "adapter_target": {
-    "adapted_context":         "<adapted planner context>",
     "foresight_plan":          ["step 1: ...", "step 2: ..."],
-    "feasibility_criteria":    ["object must be reachable"],
-    "stale_memory_assessment": ["warning: stale location for mug"]
+    "feasibility_criteria":    ["\"pick mug\": mug must be reachable"],
+    "fallback_strategy":       ["If \"cannot pick / not near\": navigate to table 1, then retry pick"]
   },
   "outcome": {
     "success":  true,
@@ -514,7 +510,7 @@ if self.mem_logger is not None and self.mem_logger.enabled:
 | `raw_memory_context` | `planner.last_memory_context.to_text()` |
 | `foresight_plan` | `planner.last_adapted_memory_output.foresight_plan` |
 | `feasibility_criteria` | `planner.last_adapted_memory_output.feasibility_criteria` |
-| `stale_memory_assessment` | `planner.last_adapted_memory_output.stale_memory_assessment` |
+| `fallback_strategy` | `planner.last_adapted_memory_output.fallback_strategy` |
 | `critic_memory_prompt` | `critic.vlm.last_adapted_memory_prompt` |
 | `critic_events` | `critic._episode_critic_records` |
 | `planner_actions` | `planner.episode_act_feedback` (decoded) |

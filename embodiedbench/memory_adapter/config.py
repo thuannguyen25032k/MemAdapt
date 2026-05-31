@@ -13,21 +13,12 @@ from typing import Any, Dict, Mapping, Optional
 @dataclass
 class MemoryAdapterConfig:
     """
-    All configuration required to instantiate and run a MemoryAdapter.
+    Configuration for MemoryAdapter.
 
-    Fields
-    ------
-    model_name_or_path   : HuggingFace model name or local path.
-    device               : "auto", "cpu", "cuda", "cuda:0", etc.
-    torch_dtype          : "auto", "float16", "bfloat16", "float32".
-    max_new_tokens       : maximum tokens to generate per adapter call.
-    temperature          : sampling temperature (ignored when do_sample=False).
-    top_p                : nucleus-sampling probability mass.
-    do_sample            : enable stochastic sampling.
-    load_in_8bit         : enable bitsandbytes 8-bit quantization.
-    load_in_4bit         : enable bitsandbytes 4-bit quantization.
-    trust_remote_code    : passed to from_pretrained.
-    enabled              : when False the adapter is a no-op (returns empty output).
+    Two mutually exclusive backends:
+    - Local HF: set model_name_or_path; model is loaded onto the GPU.
+    - API:      set api_model (+ optionally api_key / api_base_url); no local model is loaded.
+                Any OpenAI-compatible server is supported (OpenAI, lmdeploy, vLLM, …).
     """
 
     model_name_or_path: str = ""
@@ -41,12 +32,11 @@ class MemoryAdapterConfig:
     load_in_4bit: bool = False
     trust_remote_code: bool = True
     enabled: bool = True
-    # Qwen3-style thinking mode — set to False to suppress <think>...</think> output
-    # via apply_chat_template(enable_thinking=False). Ignored for OpenAI backend.
-    enable_thinking: bool = False
-    # OpenAI backend (optional — set to use GPT instead of a local HF model)
-    openai_model: str = ""        # e.g. "gpt-4o"
-    openai_api_key: str = ""      # if empty, falls back to OPENAI_API_KEY env var
+    enable_thinking: bool = False  # Qwen3: suppresses <think>…</think> when False; ignored for API backend
+    # API backend — when set, overrides local model loading
+    api_model: str = ""        # e.g. "gpt-4o" or "qwen3-14b-adapter" (lmdeploy/vLLM)
+    api_key: str = ""          # falls back to OPENAI_API_KEY env var; use "EMPTY" for local servers
+    api_base_url: str = ""     # e.g. "http://localhost:8000/v1"; empty = official OpenAI
 
     # ------------------------------------------------------------------
     # Serialization
@@ -66,8 +56,9 @@ class MemoryAdapterConfig:
             "trust_remote_code":   self.trust_remote_code,
             "enabled":             self.enabled,
             "enable_thinking":     self.enable_thinking,
-            "openai_model":        self.openai_model,
-            "openai_api_key":      self.openai_api_key,
+            "api_model":           self.api_model,
+            "api_key":             self.api_key,
+            "api_base_url":        self.api_base_url,
         }
 
     @classmethod

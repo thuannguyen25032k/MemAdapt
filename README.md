@@ -236,30 +236,12 @@ adapter = MemoryAdapter(cfg)
 
 adapter_input = MemoryAdapterInput(
     task_instruction="Pick up the mug and place it on the shelf.",
-    observation_text="I see a table and a shelf. The mug is not visible.",
     memory_context=memory_manager.retrieve("mug shelf"),
-    mode="both",
 )
 output = adapter.adapt(adapter_input)
-print(output.adapted_context)
 print(output.foresight_plan)
-```
-
-### Run the 11-condition ablation suite
-
-```bash
-python embodiedbench/scripts/run_ablation_suite.py \
-    --benchmark eb_alfred \
-    --seeds 1 2 3 \
-    --output_dir outputs/ablations
-```
-
-### Generate paper tables
-
-```bash
-python embodiedbench/scripts/generate_paper_tables.py \
-    --results_dir outputs/ablations/aggregated \
-    --output_dir  outputs/paper_tables
+print(output.feasibility_criteria)
+print(output.fallback_strategy)
 ```
 
 ---
@@ -282,10 +264,55 @@ python embodiedbench/scripts/build_preference_dataset.py \
 See [docs/sft_training.md](docs/sft_training.md) for full details.
 
 ```bash
-python -m embodiedbench.memory_adapter_training.trainer \
-    --config embodiedbench/configs/memory_adapter_training/qwen_qlora.yaml \
-    --output_dir outputs/memory_adapter_training/qwen_qlora
+python -m embodiedbench.memory_adapter_training.train_sft \
+    --config embodiedbench/configs/memory_adapter_training/qwen3_14b.yaml \
+    --train_path memory_adapter_dataset/alfred_memory_logs/sft_filtered/sft_targets_filtered.jsonl \
+                 memory_adapter_dataset/habitat_memory_logs/sft_filtered/sft_targets_filtered.jsonl \
+    --output_dir outputs/memory_adapter_training/qwen3_14b
 ```
+
+> **Unsloth backend (single-GPU, lower VRAM):** use `qwen3_14b_unsloth.yaml` inside the
+> `memadapt-unsloth` conda environment. See [conda_envs/environment_unsloth.yaml](conda_envs/environment_unsloth.yaml).
+
+---
+
+## Deployment
+
+After training, serve the fine-tuned adapter as an OpenAI-compatible API using
+[lmdeploy](https://github.com/InternLM/lmdeploy).  The `MemoryAdapter` will call the
+server instead of loading a model locally.
+
+### Step 1 — Serve the adapter with lmdeploy
+
+```bash
+conda activate lmdeploy
+
+lmdeploy serve api_server \
+    embodiedbench/memory_adapter/models/Qwen3-14B \
+    --adapters qwen3-adapter=outputs/memory_adapter_training/qwen3_14b/checkpoint-final \
+    --model-name qwen3-14b-adapter \
+    --server-port 8000 \
+    --tp 1
+```
+
+Replace `checkpoint-final` with any specific checkpoint directory (e.g. `checkpoint-100`).
+The base model path must match the one used during training.
+
+### Step 2 — Point `MemoryAdapter` at the server
+
+In `embodiedbench/configs/config.yaml` (or your per-run config override):
+
+```yaml
+memory_adapter:
+  enabled: true
+  model_name_or_path: ""       # leave empty — model is not loaded locally
+  api_model: "qwen3-14b-adapter"
+  api_key: "EMPTY"
+  api_base_url: "http://localhost:8000/v1"
+```
+
+No other code changes are needed; the adapter will call `/v1/chat/completions`
+on the lmdeploy server automatically.
 
 ---
 
@@ -296,7 +323,7 @@ See [docs/grpo_training.md](docs/grpo_training.md) for full details.
 ```bash
 python embodiedbench/scripts/train_memory_adapter_grpo.py \
     --config embodiedbench/configs/memory_adapter_rl/qwen_grpo.yaml \
-    --sft_checkpoint outputs/memory_adapter_training/qwen_qlora/checkpoint-final \
+    --sft_checkpoint outputs/memory_adapter_training/qwen3_14b/checkpoint-final \
     --output_dir     outputs/memory_adapter_rl/grpo_qwen7b
 ```
 
@@ -350,14 +377,11 @@ See [docs/reproducibility.md](docs/reproducibility.md) for full details.
 ```
 MemAdapt/
 ├── embodiedbench/
-│   ├── memory/                  # Memory system (spatial, temporal, episodic, semantic)
+│   ├── memory/                  # Memory system (spatial, temporal, episodic, semantic) + trajectory recorder
 │   ├── memory_adapter/          # MemAdapt runtime adapter
-│   ├── memory_dataset/          # Dataset generation pipeline
 │   ├── memory_adapter_training/ # SFT training infrastructure
-│   ├── memory_adapter_rl/       # GRPO / DPO / ORPO / SimPO RL refinement
+│   ├── memory_adapter_rl/       # GRPO RL refinement
 │   ├── evaluation/              # Benchmark evaluation harness
-│   ├── analysis/                # Trajectory analysis and qualitative tools
-│   ├── experiments/             # Ablation and multi-seed orchestration
 │   ├── scripts/                 # CLI entry points
 │   ├── configs/                 # YAML configs for all modules
 │   ├── examples/                # Minimal runnable examples

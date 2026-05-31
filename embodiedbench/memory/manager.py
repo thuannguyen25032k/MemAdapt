@@ -253,14 +253,13 @@ class MemoryManager:
     ) -> MemoryContext:
         if not self.config.enabled:
             return MemoryContext()
-
         k = top_k_per_memory if top_k_per_memory is not None else self.config.top_k_per_memory
         ctx = MemoryContext()
         all_items: list = []
 
         # --- Spatial ---
         if self.spatial is not None:
-            spatial_results = self.spatial.retrieve(query, top_k=10)
+            spatial_results = self.spatial.retrieve(query, top_k=15)
             if spatial_results:
                 ctx.spatial_context = self.spatial.to_prompt_context(
                     spatial_results
@@ -311,7 +310,8 @@ class MemoryManager:
         task_instruction: str = "",
         recent_actions: Optional[list] = None,
         env_name: Optional[str] = None,
-        scene_id: Optional[str] = None,
+        task_type: Optional[str] = None,
+        scene_name: Optional[str] = None,
         top_k_per_memory: Optional[int] = None,
     ) -> MemoryContext:
         if query is None:
@@ -319,7 +319,8 @@ class MemoryManager:
                 task_instruction=task_instruction,
                 recent_actions=list(recent_actions or []),
                 env_name=env_name,
-                scene_id=scene_id,
+                task_type=task_type,
+                scene_name=scene_name,
             )
         return self.retrieve(query, top_k_per_memory=top_k_per_memory)
 
@@ -332,7 +333,7 @@ class MemoryManager:
         task_instruction: str,
         final_status: str = "unknown",
         env_name: str = "",
-        scene_id: str = "",
+        task_type: str = "",
     ) -> Optional[Any]:
         if not self.config.enabled:
             return None
@@ -355,12 +356,18 @@ class MemoryManager:
 
         # Add to episodic memory
         if self.episodic is not None:
+            # Derive scene_name from spatial memory (AI2-THOR sceneName) if available.
+            scene_name = ""
+            if self.spatial is not None:
+                names = {n.scene for n in self.spatial.nodes.values() if n.scene}
+                scene_name = next(iter(names), "")
             episode = self.episodic.add_episode_from_trajectory(
                 task_instruction=task_instruction,
                 final_status=final_status,
                 steps=raw_steps,
                 env_name=env_name,
-                scene_id=scene_id,
+                task_type=task_type,
+                scene_name=scene_name,
             )
 
         # Extract semantic facts via VLM

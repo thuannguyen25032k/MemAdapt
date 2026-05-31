@@ -615,8 +615,8 @@ class SemanticMemory(BaseMemory):
                 act_bonus = min(1.0, matches / len(query_actions))
 
             score = min(1.0, max(0.0,
-                0.90 * base_sim
-                + 0.10 * act_bonus
+                0.99 * base_sim
+                + 0.01 * act_bonus
             ))
 
             reason = _reason_for_category(fact.category)

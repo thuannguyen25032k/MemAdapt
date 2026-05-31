@@ -49,13 +49,6 @@ pytest tests/ --cov=embodiedbench --cov-report=html
 4. Add a weight entry in `qwen_grpo.yaml` under `reward_weights:`.
 5. Add a test in `tests/memory_adapter_rl/test_rl_pipeline.py`.
 
-## Adding a New Ablation Condition
-
-1. Add the condition name to `ABLATION_NAMES` in
-   `embodiedbench/experiments/ablations.py`.
-2. Implement the config-building logic in `build_ablation_config()`.
-3. Add a test in `tests/experiments/test_experiment_pipeline.py`.
-
 ## Code Style
 
 - Black formatting (`black embodiedbench/ tests/`)

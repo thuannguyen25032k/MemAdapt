@@ -90,7 +90,7 @@ dependencies:
       - kiwisolver==1.4.7
       - lark==1.2.2
       - llvmlite==0.43.0
-      - lmdeploy==0.7.0.post2
+      - lmdeploy
       - markdown-it-py==3.0.0
       - markupsafe==3.0.2
       - matplotlib==3.9.4

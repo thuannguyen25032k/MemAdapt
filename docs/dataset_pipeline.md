@@ -68,10 +68,10 @@ populated for DPO/ORPO training:
 
 ```json
 {
-  "prompt": "<system>...<user>Task: ...\nMemory: ...\nObservation: ...</user>",
-  "target": "<ADAPTED_CONTEXT>...</ADAPTED_CONTEXT>\n<FORESIGHT_PLAN>...</FORESIGHT_PLAN>\n...",
-  "chosen": "<ADAPTED_CONTEXT>...</ADAPTED_CONTEXT>...",
-  "rejected": "<ADAPTED_CONTEXT>[verbatim stale memory]</ADAPTED_CONTEXT>..."
+  "prompt": "<system>...<user>Task: ...\nMemory: ...</user>",
+  "target": "<FORESIGHT_PLAN>...</FORESIGHT_PLAN>\n<FEASIBILITY_CRITERIA>...</FEASIBILITY_CRITERIA>\n<FALLBACK_STRATEGY>...</FALLBACK_STRATEGY>",
+  "chosen": "<FORESIGHT_PLAN>...</FORESIGHT_PLAN>...",
+  "rejected": "<FORESIGHT_PLAN>[verbatim stale memory]</FORESIGHT_PLAN>..."
 }
 ```
 

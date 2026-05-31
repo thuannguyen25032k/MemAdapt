@@ -154,7 +154,8 @@ class MemoryQuery:
     task_instruction: str = ""
     recent_actions: list = field(default_factory=list)        # list[str]
     env_name: Optional[str] = None
-    scene_id: Optional[str] = None
+    task_type: Optional[str] = None      # eval_set name ("base", "spatial", ...); None if unknown
+    scene_name: Optional[str] = None     # AI2-THOR sceneName (e.g. "FloorPlan3"); None for Habitat
 
     # ------------------------------------------------------------------
     def text_for_retrieval(self) -> str:
@@ -177,7 +178,8 @@ class MemoryQuery:
             "task_instruction":     self.task_instruction,
             "recent_actions":       list(self.recent_actions),
             "env_name":             self.env_name,
-            "scene_id":             self.scene_id,
+            "task_type":            self.task_type,
+            "scene_name":           self.scene_name,
         }
 
     @classmethod
@@ -186,7 +188,8 @@ class MemoryQuery:
             task_instruction=d.get("task_instruction", ""),
             recent_actions=list(d.get("recent_actions") or []),
             env_name=d.get("env_name"),
-            scene_id=d.get("scene_id"),
+            task_type=d.get("task_type") or d.get("scene_id"),
+            scene_name=d.get("scene_name"),
         )
 
 

@@ -43,9 +43,6 @@ class MemoryExperimentMetrics:
     adapted_planner_prompt_chars: int = 0 # total chars of adapter-produced planner context
     adapted_critic_prompt_chars: int = 0  # total chars of adapter-produced critic context
 
-    # --- Planning hints ---
-    planning_hint_count: int = 0          # planning hints surfaced across the episode
-
     # --- Episode outcome ---
     env_steps: int = 0                    # number of environment steps taken
     task_success: Optional[bool] = None   # whether the task was completed successfully
@@ -69,7 +66,6 @@ class MemoryExperimentMetrics:
             "adapter_planner_calls": self.adapter_planner_calls,
             "adapter_critic_calls": self.adapter_critic_calls,
             "adapter_fallbacks": self.adapter_fallbacks,
-            "planning_hint_count": self.planning_hint_count,
             "planner_memory_prompt_chars": self.planner_memory_prompt_chars,
             "critic_memory_prompt_chars": self.critic_memory_prompt_chars,
             "adapted_planner_prompt_chars": self.adapted_planner_prompt_chars,
@@ -95,7 +91,6 @@ class MemoryExperimentMetrics:
         self.adapter_planner_calls = 0
         self.adapter_critic_calls = 0
         self.adapter_fallbacks = 0
-        self.planning_hint_count = 0
         self.planner_memory_prompt_chars = 0
         self.critic_memory_prompt_chars = 0
         self.adapted_planner_prompt_chars = 0

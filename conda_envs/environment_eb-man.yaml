@@ -202,7 +202,7 @@ dependencies:
       - jsonschema-specifications==2024.10.1
       - jupyterlab-widgets==3.0.13
       - lark==1.2.2
-      - lmdeploy==0.6.4
+      - lmdeploy
       - markdown-it-py==3.0.0
       - markupsafe==3.0.2
       - matplotlib==3.9.4
@@ -296,3 +296,4 @@ dependencies:
       - xxhash==3.5.0
       - yapf==0.43.0
       - yarl==1.18.3
+      - rapidfuzz

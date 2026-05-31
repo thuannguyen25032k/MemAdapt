@@ -1,0 +1,100 @@
+# configs/memory_adapter_training/qwen3_14b_unsloth.yaml
+#
+# Single-GPU QLoRA SFT of Qwen3-14B as the Memory Adapter, using the Unsloth
+# backend (model.use_unsloth: true). Fits comfortably on one 48 GB GPU
+# (e.g. RTX 6000 Ada) thanks to Unsloth's 4-bit loading + memory-efficient
+# gradient checkpointing.
+#
+# Run inside the dedicated env (conda_envs/environment_unsloth.yaml):
+#   python -m embodiedbench.memory_adapter_training.train_sft \
+#       --config embodiedbench/configs/memory_adapter_training/qwen3_14b_unsloth.yaml
+
+model:
+  model_name_or_path: embodiedbench/memory_adapter/models/Qwen3-14B
+  tokenizer_name_or_path: null
+  trust_remote_code: true
+  use_flash_attention: false      # Unsloth selects its own optimized attention
+  load_in_4bit: true              # QLoRA — halves VRAM vs full bf16
+  load_in_8bit: false
+  torch_dtype: bfloat16
+  attn_implementation: null
+  enable_thinking: false          # must match the inference setting
+  use_unsloth: true               # <-- selects the Unsloth backend
+
+dataset:
+  train_path:
+    - memory_adapter_dataset/alfred_memory_logs/sft_filtered/sft_targets_filtered.jsonl
+    - memory_adapter_dataset/habitat_memory_logs/sft_filtered/sft_targets_filtered.jsonl
+  val_path: ""
+  val_ratio: 0.1
+  max_seq_length: 8192
+
+training:
+  output_dir: outputs/memory_adapter_training/qwen3_14b_unsloth
+  num_train_epochs: 6
+  learning_rate: 1.0e-4
+  weight_decay: 0.01
+  warmup_ratio: 0.05
+  lr_scheduler_type: cosine
+  gradient_accumulation_steps: 16
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  bf16: true
+  fp16: false
+  gradient_checkpointing: true    # routed to Unsloth's checkpointing internally
+  logging_steps: 5
+  eval_steps: 50
+  save_steps: 50
+  save_total_limit: 5
+  dataloader_num_workers: 2
+  seed: 42
+  resume_from_checkpoint: null
+
+lora:
+  enabled: true
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  bias: none
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+generation:
+  max_new_tokens: 1024
+  temperature: 0.7
+  top_p: 0.9
+  do_sample: false
+  repetition_penalty: 1.1
+
+logging:
+  report_to: none
+  wandb_project: memadapt-sft
+  run_name: qwen3_14b_unsloth_sft
+  log_level: INFO
+
+evaluation:
+  num_eval_generations: 20
+  save_eval_samples: true
+  eval_output_file: outputs/memory_adapter_training/qwen3_14b_unsloth/eval_samples.json
+
+wandb:
+  enabled: true
+  project: memadapt-sft
+  entity: null
+  group: sft
+  tags:
+    - sft
+    - qwen3-14b
+    - unsloth
+  log_model: false
+  log_examples: true
+  mode: online
+  save_code: true
+  resume: allow
+  run_id: null

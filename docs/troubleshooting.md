@@ -112,7 +112,6 @@ pytest tests/ -q
 
 ```bash
 pytest tests/memory_adapter_rl/ -v
-pytest tests/experiments/ -v
 ```
 
 ### 8 skipped tests

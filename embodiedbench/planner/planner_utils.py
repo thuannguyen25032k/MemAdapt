@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import base64
 import copy
 from mimetypes import guess_type
@@ -7,9 +8,10 @@ import google.generativeai as genai
 from openai import OpenAI, AzureOpenAI
 import typing_extensions as typing
 from pydantic import BaseModel, Field
+from json_repair import repair_json
 
 template_lang = '''\
-The output JSON format should be {'reasoning_and_reflection':str, 'language_plan':str, 'executable_plan':List[{'action_id':int, 'action_name':str}...]}
+The output JSON format should be {"reasoning_and_reflection":str, "language_plan":str, "executable_plan":[{"action_id":int, "action_name":str}, ...]}
 The fields in above JSON follow the purpose below:
 1. reasoning_and_reflection is for summarizing the history of interactions and any available environmental feedback. Additionally, provide reasoning as to why the last action or plan failed and did not finish the task, \
 2. language_plan is for describing a list of actions to achieve the user instruction. Each action is started by the step number and the action name, \
@@ -18,7 +20,7 @@ The fields in above JSON follow the purpose below:
 '''
 
 template = '''
-The output JSON format should be {'visual_state_description':str, 'reasoning_and_reflection':str, 'language_plan':str, 'executable_plan':List[{'action_id':int, 'action_name':str}...]}
+The output JSON format should be {"visual_state_description":str, "reasoning_and_reflection":str, "language_plan":str, "executable_plan":[{"action_id":int, "action_name":str}, ...]}
 The fields in above JSON follow the purpose below:
 1. visual_state_description is for description of current state from the visual image, 
 2. reasoning_and_reflection is for summarizing the history of interactions and any available environmental feedback. Additionally, provide reasoning as to why the last action or plan failed and did not finish the task, 
@@ -55,12 +57,13 @@ def fix_json(json_str):
     Strategy (in order):
     1. Strip markdown code fences.
     2. Extract the outermost {...} block (ignore any preamble/postamble text).
-    3. Replace Python literals: True→true, False→false, None→null.
-    4. Insert missing commas between adjacent objects/arrays (}{  →  },{  and ][  →  ],[).
-    5. Remove trailing commas before ] or }.
-    6. Replace single-quoted JSON structural delimiters (keys and string values)
+    3. Fix invalid JSON escape sequences (e.g. \\find, \\navigate, \\the → remove backslash).
+    4. Replace Python literals: True→true, False→false, None→null.
+    5. Insert missing commas between adjacent objects/arrays (}{  →  },{  and ][  →  ],[).
+    6. Remove trailing commas before ] or }.
+    7. Replace single-quoted JSON structural delimiters (keys and string values)
        with double quotes, WITHOUT touching apostrophes inside already-double-quoted values.
-    7. For each known long free-text field (visual_state_description,
+    8. For each known long free-text field (visual_state_description,
        reasoning_and_reflection, language_plan) escape any bare double-quotes that
        appear inside the value, using a lookahead to the next JSON key boundary.
     """
@@ -73,21 +76,33 @@ def fix_json(json_str):
     if brace_start != -1 and brace_end != -1 and brace_end > brace_start:
         json_str = json_str[brace_start:brace_end + 1]
 
-    # 3. Replace Python literals with JSON equivalents.
+    # 3. Fix invalid and misused JSON escape sequences.
+    #    Models often write prose backslashes like \find, \navigate, \the, \to.
+    #    (a) Completely invalid escape chars (not in JSON spec at all): remove backslash.
+    #        Valid JSON escapes after \: " \ / b f n r t u
+    json_str = re.sub(r'\\(?!["\\/bfnrtu])', '', json_str)
+    #    (b) Technically-valid escape chars used as word-starters (\find→\f+ind,
+    #        \the→\t+he, \navigate→\n+avigate, \before→\b+efore, \result→\r+esult):
+    #        detected when the escape char is immediately followed by another letter.
+    json_str = re.sub(r'\\([bfnrt])(?=[a-zA-Z])', r'\1', json_str)
+    #    (c) \u not followed by exactly 4 hex digits (e.g. \use, \under) → remove backslash.
+    json_str = re.sub(r'\\u(?![0-9a-fA-F]{4})', 'u', json_str)
+
+    # 4. Replace Python literals with JSON equivalents.
     #    Use \b word boundaries so we don't corrupt words like "Trueblood" or "FalseStart".
     json_str = re.sub(r'\bTrue\b',  'true',  json_str)
     json_str = re.sub(r'\bFalse\b', 'false', json_str)
     json_str = re.sub(r'\bNone\b',  'null',  json_str)
 
-    # 4. Insert missing commas between adjacent } { or ] [ pairs.
+    # 5. Insert missing commas between adjacent } { or ] [ pairs.
     #    This fixes executable_plan items like [...}{...] that InternVL sometimes emits.
     json_str = re.sub(r'}\s*{', '},{', json_str)
     json_str = re.sub(r']\s*\[', '],[', json_str)
 
-    # 5. Remove trailing commas before a closing ] or }.
+    # 6. Remove trailing commas before a closing ] or }.
     json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
 
-    # 6. Convert single-quoted keys/string-delimiters to double quotes.
+    # 7. Convert single-quoted keys/string-delimiters to double quotes.
     #    Only replace ' that act as JSON delimiters (immediately after { , [ or :),
     #    to avoid turning apostrophes inside already-double-quoted string values.
 
@@ -98,7 +113,7 @@ def fix_json(json_str):
     # (preceded by : or [ or , followed by optional space)
     json_str = re.sub(r"(?<=[:,\[])\s*'((?:[^'\\]|\\.)*)'", lambda m: f' "{m.group(1)}"', json_str)
 
-    # 7. Escape bare double-quotes inside free-text string values.
+    # 8. Escape bare double-quotes inside free-text string values.
     #    For each long-text field, find the value between its opening quote and the
     #    quote that precedes the next key (or end of object).
     text_fields = [
@@ -117,6 +132,12 @@ def fix_json(json_str):
             value  = re.sub(r'(?<!\\)"', r'\\"', value)
             return prefix + value
         json_str = re.sub(pattern, _escape_inner, json_str, flags=re.DOTALL)
+
+    # 9. Last-resort: if the result is still not valid JSON, delegate to json-repair.
+    try:
+        json.loads(json_str)
+    except (json.JSONDecodeError, ValueError):
+        json_str = repair_json(json_str, return_objects=False)
 
     return json_str
 

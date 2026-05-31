@@ -29,7 +29,7 @@ from embodiedbench.envs.eb_alfred.gen import constants
 from embodiedbench.main import logger
 
 # global information
-X_DISPLAY = '0'
+X_DISPLAY = '1'
 ALFRED_SPLIT_PATH = os.path.join(os.path.dirname(__file__), 'data/splits/splits.json')
 ALFRED_REWARD_PATH = os.path.join(os.path.dirname(__file__), 'models/config/rewards.json')
 ALFRED_DATASET_PATH = os.path.join(os.path.dirname(__file__), 'data/json_2.1.0')

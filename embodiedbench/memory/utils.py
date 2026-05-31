@@ -3,8 +3,6 @@ memory/utils.py
 
 Shared utilities for the MemAdapt memory system.
 
-Centralises helpers that were previously scattered across individual modules:
-
   - text similarity / set-overlap / list deduplication  (used by semantic/episodic memory)
   - safe config-key access helpers                      (used by integration.py)
   - safe attribute / string helpers                     (used by logging.py)

@@ -49,10 +49,9 @@ def get_evaluator(env_name: str):
 def main(cfg: DictConfig) -> None:
     logging.getLogger().handlers.clear()
     
-    if 'log_level' not in cfg or cfg.log_level == "INFO":
-        logger.setLevel(logging.INFO)
-    if 'log_level' in cfg and cfg.log_level == "DEBUG":
-        logger.setLevel(logging.DEBUG)
+    _log_level_str = cfg.get("log_level", "INFO") if hasattr(cfg, "get") else getattr(cfg, "log_level", "INFO")
+    _log_level = getattr(logging, str(_log_level_str).upper(), logging.INFO)
+    logger.setLevel(_log_level)
 
     env_name = cfg.env
     logger.info(f"Evaluating environment: {env_name}")

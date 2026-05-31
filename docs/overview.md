@@ -38,11 +38,10 @@ The Memory Adapter is the sole trainable component in the system, trained in two
    feedback, improving robustness to stale memories, reducing hallucination, and
    tightening feasibility reasoning.  The planner and critic remain frozen throughout.
 
-The adapter produces four structured output sections:
-- `ADAPTED_CONTEXT` — uncertainty-aware memory summary, flagging stale or conflicting entries.
-- `FORESIGHT_PLAN` — memory-grounded high-level step sequence for the planner.
-- `FEASIBILITY_CRITERIA` — concrete, verifiable pass/fail conditions for the critic.
-- `STALE_MEMORY_ASSESSMENT` — explicit per-entry reasoning about which memory records are likely stale and why.
+The adapter produces three structured output sections:
+- `FORESIGHT_PLAN` — memory-grounded, ordered step sequence for the planner.
+- `FEASIBILITY_CRITERIA` — per-action preconditions for the critic to verify.
+- `FALLBACK_STRATEGY` — concrete recovery actions for the most likely failures.
 
 ## Design Principles
 

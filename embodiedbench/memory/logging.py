@@ -65,11 +65,6 @@ class MemoryEpisodeLog:
         """Return a JSON-safe dict."""
         return asdict(self)
 
-    @classmethod
-    def from_dict(cls, d: dict) -> "MemoryEpisodeLog":
-        known = {f.name for f in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
-        return cls(**{k: v for k, v in d.items() if k in known})
-
 
 # ---------------------------------------------------------------------------
 # MemoryExperimentLogger

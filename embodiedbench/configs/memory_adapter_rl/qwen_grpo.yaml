@@ -1,0 +1,86 @@
+# configs/memory_adapter_rl/qwen_grpo.yaml
+# GRPO refinement of the Memory Adapter (Qwen2.5-7B-Instruct base)
+# ----------------------------------------------------------------
+run_name: memadapt_grpo_qwen7b
+algorithm: grpo
+seed: 42
+
+# Model
+model_name_or_path: Qwen/Qwen2.5-7B-Instruct
+trust_remote_code: true
+torch_dtype: bfloat16
+load_in_4bit: false
+
+# LoRA
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+
+# Data — prompts file (list of prompt strings in JSONL)
+train_data_path: data/memory_adapter_rl/grpo_prompts_train.jsonl
+val_data_path: data/memory_adapter_rl/grpo_prompts_val.jsonl
+max_prompt_length: 1024
+max_length: 2048
+
+# Training
+output_dir: outputs/memory_adapter_rl/grpo_qwen7b
+num_train_epochs: 1
+learning_rate: 2.0e-5
+per_device_train_batch_size: 2
+per_device_eval_batch_size: 2
+gradient_accumulation_steps: 4
+warmup_ratio: 0.03
+lr_scheduler_type: cosine
+bf16: true
+fp16: false
+gradient_checkpointing: true
+logging_steps: 10
+eval_steps: 100
+save_steps: 100
+save_total_limit: 3
+dataloader_num_workers: 0
+
+# Reward weights — emphasise the three guidance sections the planner consumes
+reward_weights:
+  w_success: 1.0
+  w_progress: 0.5
+  w_format: 0.5
+  w_foresight: 0.6
+  w_feasibility: 0.6
+  w_fallback: 0.6
+  w_replan: 0.1
+  w_invalid: 0.1
+  w_repetition: 0.3
+
+# GRPO-specific
+grpo:
+  num_generations: 8
+  kl_beta: 0.04
+  temperature: 0.9
+  top_p: 0.95
+  max_new_tokens: 512
+  rollout_batch_size: 4
+  advantage_epsilon: 1.0e-8
+
+# Logging
+report_to: none
+wandb_project: memadapt-rl
+log_level: INFO
+
+# Evaluation
+eval_format_validity: true
+num_eval_samples: 50
+
+# Weights & Biases
+wandb:
+  enabled: false
+  project: "memadapt-rl"
+  entity: null
+  group: null
+  tags: []
+  log_model: false
+  log_examples: true
+  mode: "online"
+  save_code: true
+  resume: false
+  run_id: null

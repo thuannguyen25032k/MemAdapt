@@ -238,7 +238,7 @@ dependencies:
       - jupyterlab-pygments==0.3.0
       - lark==1.2.2
       - llvmlite==0.39.1
-      - lmdeploy==0.6.3
+      - lmdeploy
       - markdown-it-py==3.0.0
       - markupsafe==1.1.1
       - matplotlib-inline==0.1.7

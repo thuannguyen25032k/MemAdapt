@@ -22,7 +22,7 @@ from embodiedbench.memory.integration import (
     create_logger_from_config,
 )
 from embodiedbench.memory.logging import MemoryExperimentLogger
-from embodiedbench.memory_dataset.recorder import TrajectoryRecorder
+from embodiedbench.memory.trajectory import TrajectoryRecorder
 from embodiedbench.wandb_utils import wandb_run
 from embodiedbench.wandb_utils.eval_logger import EvalWandbLogger
 from embodiedbench.wandb_utils.artifact_utils import log_results_artifact
@@ -437,8 +437,6 @@ class EB_HabitatEvaluator():
                 info=info,
                 env_name="habitat",
                 task_type=str(self.eval_set),
-                episode_idx=episode_idx,
-                extra_metadata={"model_name": self.model_name, "eval_set": str(self.eval_set)},
             )
             save_memory_if_configured(self.memory_manager, self.config, on_episode_end=True)
 

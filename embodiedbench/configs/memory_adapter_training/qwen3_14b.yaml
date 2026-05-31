@@ -1,0 +1,99 @@
+# configs/memory_adapter_training/qwen3_14b.yaml
+#
+# LoRA (full bf16 base) supervised fine-tuning of Qwen3-14B as the Memory Adapter.
+# Requires ~60 GB VRAM (e.g. 2× A100-80 GB or 4× A100-40 GB) via device_map="auto".
+# Switch load_in_4bit: true to use QLoRA and halve VRAM at a small accuracy cost.
+
+model:
+  model_name_or_path: embodiedbench/memory_adapter/models/Qwen3-14B
+  tokenizer_name_or_path: null
+  trust_remote_code: true
+  use_flash_attention: true
+  load_in_4bit: false
+  load_in_8bit: false
+  torch_dtype: bfloat16
+  attn_implementation: flash_attention_2
+  # Must match the inference setting in memory_adapter.config (default False)
+  enable_thinking: false
+
+dataset:
+  # Filtered SFT targets produced by filter_sft_targets.py.
+  # List multiple files to merge domains into a single training run.
+  train_path:
+    - memory_adapter_dataset/alfred_memory_logs/sft_filtered/sft_targets_filtered.jsonl
+    - memory_adapter_dataset/habitat_memory_logs/sft_filtered/sft_targets_filtered.jsonl
+  val_path: ""
+  val_ratio: 0.1            # auto hold-out split when val_path is empty
+  max_seq_length: 8192
+
+training:
+  output_dir: outputs/memory_adapter_training/qwen3_14b
+  num_train_epochs: 6
+  learning_rate: 1.0e-4
+  weight_decay: 0.01
+  warmup_ratio: 0.05
+  lr_scheduler_type: cosine
+  gradient_accumulation_steps: 16
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  bf16: true
+  fp16: false
+  gradient_checkpointing: true
+  logging_steps: 5
+  eval_steps: 50
+  save_steps: 50
+  save_total_limit: 5
+  dataloader_num_workers: 2
+  seed: 42
+  resume_from_checkpoint: null
+
+lora:
+  enabled: true
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  bias: none
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+generation:
+  max_new_tokens: 1024
+  temperature: 0.7
+  top_p: 0.9
+  do_sample: false
+  repetition_penalty: 1.1
+
+logging:
+  # Keep report_to: none — W&B logging is handled by SFTWandbCallback (the
+  # wandb: block below), so HF's native integration must stay off to avoid a
+  # duplicate wandb.init().
+  report_to: none
+  wandb_project: memadapt-sft
+  run_name: qwen3_14b_sft
+  log_level: INFO
+
+evaluation:
+  num_eval_generations: 20
+  save_eval_samples: true
+  eval_output_file: outputs/memory_adapter_training/qwen3_14b/eval_samples.json
+
+wandb:
+  enabled: true            # master switch — set false for a quick local run
+  project: memadapt-sft
+  entity: null             # your W&B team/user, or null for personal account
+  group: sft
+  tags:
+    - sft
+    - qwen3-14b
+  log_model: false         # set true to upload the final LoRA adapter as an artifact
+  log_examples: true
+  mode: online             # "online" | "offline" | "disabled"
+  save_code: true
+  resume: allow            # "allow" | "must" | "never" | "auto"
+  run_id: null

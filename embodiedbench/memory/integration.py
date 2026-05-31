@@ -367,9 +367,7 @@ def finalize_memory_episode(
     task_instruction: str,
     info: dict,
     env_name: str = "",
-    scene_id: str = "",
-    episode_idx: Optional[int] = None,
-    extra_metadata: Optional[dict] = None,
+    task_type: str = "",
 ) -> None:
     """
     Call memory_manager.finalize_episode() at the end of an episode.
@@ -388,7 +386,7 @@ def finalize_memory_episode(
             task_instruction=task_instruction,
             final_status=final_status,
             env_name=env_name,
-            scene_id=scene_id,
+            task_type=task_type,
         )
         logger.info(
             f"[Memory] Episode finalized. status={final_status}, "

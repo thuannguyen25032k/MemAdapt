@@ -5,10 +5,12 @@ Prompt templates and the build_adapter_prompt() factory for the Memory Adapter.
 
 Design principles
 -----------------
-- Section-based plain-text output (not JSON) to avoid planner JSON parser conflicts.
+- Section-based plain-text (XML-tagged) output, not JSON, to avoid planner JSON parser conflicts.
 - Text-only: no live observation is available; adapter receives task instruction + memory only.
-- Stale memory is explicitly flagged as uncertain.
-- Output sections are consistently labelled so parsing.py can extract them.
+- The system turn carries the role/format instructions; the user turn carries the
+  task instruction + retrieved memory (shared by inference and SFT training).
+- Output sections (FORESIGHT_PLAN / FEASIBILITY_CRITERIA / FALLBACK_STRATEGY) are
+  consistently labelled so parsing.py can extract them.
 """
 
 from __future__ import annotations
@@ -91,7 +93,7 @@ When generating FEASIBILITY_CRITERIA, you MUST:
 - Format each entry as: "<sub-task>": <condition to check>.
 
 When generating FALLBACK_STRATEGY, you MUST:
-- Derive the most likely invalid actions from [Event Memory] and [Semantic Memory].
+- Derive the most likely invalid actions from [Episodic Memory] and [Semantic Memory].
 - List 1-4 recovery actions for each likely invalid action of THIS specific task. 
 - Each bullet starts with: If "<invalid condition>": <recovery action>.
 Example:
@@ -136,18 +138,65 @@ def _format_memory_section(memory_context) -> str:
 # Main factory
 # ---------------------------------------------------------------------------
 
+def build_adapter_user_content(task_instruction: str, memory_text: str) -> str:
+    """
+    Build the *user-turn* content for the Memory Adapter.
+
+    This is the task-specific part of the prompt (instruction + retrieved
+    memory). The role-independent instructions live in ``SYSTEM_PROMPTS`` and
+    are supplied separately as the system turn (see ``build_adapter_messages``).
+
+    Single source of truth shared by inference and SFT training so the two
+    stay in sync.
+    """
+    memory_text = memory_text if (memory_text and memory_text.strip()) else "(no memory available)"
+    parts = [
+        f"## Now the human instruction is: {task_instruction}",
+        "",
+        "## RETRIEVED MEMORY",
+        memory_text,
+        "",
+        "Now produce your structured output below.",
+    ]
+    return "\n".join(parts)
+
+
+def build_adapter_messages(task_instruction: str, memory_text: str) -> "list[dict]":
+    """
+    Build the chat ``messages`` list (system + user) for the Memory Adapter.
+
+    Returns
+    -------
+    [{"role": "system", "content": SYSTEM_PROMPTS},
+     {"role": "user",   "content": <instruction + retrieved memory>}]
+
+    The model-specific chat template (e.g. Qwen3 ``<|im_start|>``) is applied
+    by the caller via ``tokenizer.apply_chat_template`` (HF) or passed straight
+    to ``chat.completions.create`` (OpenAI).
+    """
+    return [
+        {"role": "system", "content": SYSTEM_PROMPTS.rstrip()},
+        {"role": "user", "content": build_adapter_user_content(task_instruction, memory_text)},
+    ]
+
+
+def messages_to_text(messages: "list[dict]") -> str:
+    """Flatten chat ``messages`` into a single string.
+
+    Used only as a fallback for tokenizers that have no chat template.
+    """
+    return "\n\n".join(m["content"] for m in messages)
+
+
 def build_adapter_prompt(
     adapter_input: "MemoryAdapterInput",
     config: "MemoryAdapterConfig",
-) -> str:
+) -> "list[dict]":
     """
-    Build the full prompt string to send to the Memory Adapter model.
+    Build the chat ``messages`` (system + user) to send to the adapter model.
 
-    The prompt consists of:
-      1. system-role instructions;
-      2. task instruction;
-      3. retrieved memory context;
-      4. the output-format reminder.
+    Thin wrapper around :func:`build_adapter_messages` that extracts the task
+    instruction and memory text from the structured ``adapter_input``.
 
     Parameters
     ----------
@@ -156,25 +205,7 @@ def build_adapter_prompt(
 
     Returns
     -------
-    str  - ready-to-send prompt (no code fences, no raw JSON).
+    list[dict] - chat messages with ``system`` and ``user`` roles.
     """
-    system_prompt = SYSTEM_PROMPTS
-
-    # --- Memory block ---
     memory_text = _format_memory_section(adapter_input.memory_context)
-    # --- Assemble ---
-    parts = [
-        system_prompt.rstrip(),
-        "",
-        f"## Now the human instruction is: {adapter_input.task_instruction}",
-    ]
-
-    parts += [
-        "",
-        "## RETRIEVED MEMORY",
-        memory_text,
-        "",
-        "Now produce your structured output below.",
-    ]
-
-    return "\n".join(parts)
+    return build_adapter_messages(adapter_input.task_instruction, memory_text)

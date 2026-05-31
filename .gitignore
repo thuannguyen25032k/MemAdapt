@@ -1,16 +1,52 @@
-outputs/
+# ── Build / packaging ────────────────────────────────────────────────────────
 *.pyc
-*__pycache__
+*.pyo
+__pycache__/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── IDE / editor ──────────────────────────────────────────────────────────────
 .vscode/
-A_Goal_Without_a_Plan_Is_Just_a_Wish.pdf
-embodiedbench/envs/eb_manipulation/generate_dataset.sh
-embodiedbench/envs/eb_manipulation/tools/__pycache__/grasploc.cpython-39.pyc
-*running
+.idea/
 *.DS_Store
-embodiedbench.egg-info/
-*outdated
-embodiedbench/envs/manipulaThor1
-embodiedbench.egg-info1
+
+# ── Training outputs ──────────────────────────────────────────────────────────
+outputs/
+wandb/
+runs/
+
+# ── Model weights (large binaries — track with Git LFS if needed) ─────────────
+embodiedbench/memory_adapter/models/
+*.pt
+*.pth
+*.safetensors
+*.gguf
+*.bin
+
+# ── Benchmark data ────────────────────────────────────────────────────────────
 embodiedbench/envs/eb_habitat/data/
-dockers
+data/
+habitat-lab
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+alfred_memory_logs/
+habitat_memory_logs/
+*.log
+
+# ── Memory stores (runtime state, not source) ─────────────────────────────────
+alfred_memory_store/
+habitat_memory_store/
+
+# ── Dataset artefacts (generated, not source) ─────────────────────────────────
+memory_adapter_dataset/
+
+# ── Misc project-specific ─────────────────────────────────────────────────────
+running/
+dockers/
 datahabitat-lab/
+embodiedbench/envs/manipulaThor1/
+embodiedbench/envs/eb_manipulation/tools/__pycache__/
+docs/pdf/
