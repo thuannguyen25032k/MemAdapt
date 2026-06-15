@@ -5,7 +5,7 @@ import io
 import requests
 
 temperature = 0
-max_completion_tokens = 2048
+max_completion_tokens = 2096
 server_url = os.environ.get('server_url')
 
 class CustomModel():

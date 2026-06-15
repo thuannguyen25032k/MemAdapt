@@ -34,8 +34,8 @@ ALFRED_SPLIT_PATH = os.path.join(os.path.dirname(__file__), 'data/splits/splits.
 ALFRED_REWARD_PATH = os.path.join(os.path.dirname(__file__), 'models/config/rewards.json')
 ALFRED_DATASET_PATH = os.path.join(os.path.dirname(__file__), 'data/json_2.1.0')
 ValidEvalSets = [
-    'base', 'common_sense', 'complex_instruction', 'spatial', 
-    'visual_appearance', 'long_horizon'
+    'base', 'common_sense', 'complex_instruction', 'spatial',
+    'visual_appearance', 'long_horizon',
     ]
 
 
@@ -120,7 +120,9 @@ class EBAlfEnv(gym.Env):
         self.selected_indexes = selected_indexes
         self._initial_episode_num = 0
         self._current_step = 0
-        if eval_set == 'long_horizon':
+        # Long-horizon sets (ALFRED-L and the Memory-Adapter stress sets) need a
+        # larger step / invalid-action budget for their composite tasks.
+        if eval_set in ('long_horizon', 'adapter_cross_episode', 'composite'):
             self._max_episode_steps = 50
             self._max_invalid_actions = 15
         else:

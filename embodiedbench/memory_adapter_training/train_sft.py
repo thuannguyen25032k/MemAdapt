@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import argparse
 import os
-
 from embodiedbench.memory_adapter_training.config import MemoryAdapterTrainingConfig
 from embodiedbench.memory_adapter_training.dataset import (
     load_sft_records,
@@ -97,7 +96,6 @@ def main() -> None:
     train_paths = args.train_path or [cfg.dataset.train_path]
     val_path = cfg.dataset.val_path or None
     train_ds, val_ds = _load_datasets(cfg, train_paths, val_path)
-
     # Model + tokenizer (+ LoRA).
     model, tokenizer = get_trainable_model(cfg)
     total, trainable = count_parameters(model)

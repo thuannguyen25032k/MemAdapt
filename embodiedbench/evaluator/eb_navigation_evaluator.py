@@ -17,14 +17,8 @@ from embodiedbench.evaluator.config.system_prompts import eb_navigation_system_p
 from embodiedbench.evaluator.config.eb_navigation_example import examples
 from embodiedbench.main import logger
 from embodiedbench.memory.integration import (
-    create_memory_manager_from_config,
-    attach_memory_to_planner,
-    attach_memory_to_critic,
     finalize_memory_episode,
     save_memory_if_configured,
-    create_memory_adapter_from_config,
-    attach_memory_adapter_to_planner,
-    attach_memory_adapter_to_critic,
     unload_memory_adapter,
     setup_memory_experiment,
 )
@@ -80,15 +74,10 @@ class EB_NavigationEvaluator():
                                            multiview=self.config['multiview'], multistep = self.config['multistep'], 
                                            visual_icl = self.config['visual_icl'], truncate=self.config.get('truncate', False))
 
-            # --- Memory + MemoryAdapter setup (experiment-mode aware) ---
-            self.memory_manager, self.memory_adapter = setup_memory_experiment(
-                self.config, self.planner, None
-            )
-
             # Enable per-episode planner debug logs
             self.planner.log_path = self.env.log_path
 
-            # --- Dual-Critic setup ---
+            # --- Dual-Critic setup (created before memory so it can be wired in) ---
             use_critic = self.config.get('use_critic', False)
             self.dual_critic = None
             if use_critic:
@@ -102,10 +91,14 @@ class EB_NavigationEvaluator():
                 )
                 self.dual_critic = NavigationDualCritic(sym_critic, vlm_critic)
                 self.dual_critic.log_path = self.env.log_path
-                # forward memory to critic
-                attach_memory_to_critic(self.dual_critic, self.memory_manager)
-                attach_memory_adapter_to_critic(self.dual_critic, self.memory_adapter)
                 logger.info("[NavigationDualCritic] Enabled for this evaluation run.")
+
+            # --- Memory + MemoryAdapter setup (experiment-mode aware) ---
+            # Pass the critic so memory/adapter are forwarded to it automatically
+            # (matches eb_alfred_evaluator behaviour).
+            self.memory_manager, self.memory_adapter = setup_memory_experiment(
+                self.config, self.planner, self.dual_critic
+            )
 
             self.evaluate()
             average_json_values(os.path.join(self.env.log_path, 'results'), selected_key = None)
@@ -147,7 +140,13 @@ class EB_NavigationEvaluator():
                         logger.info("Empty plan returned by planner, stopping episode.")
                         break
                     if action == -1:  # JSON parse / invalid action id
+                        episode_info['num_invalid_actions'] += 1
+                        episode_info['reward'].append(-1)
+                        self.env._cur_invalid_actions += 1
                         logger.info("Invalid action id returned by planner, replanning.")
+                        if self.env._cur_invalid_actions >= self.env._max_invalid_actions:
+                            logger.info("Max invalid actions reached, stopping episode.")
+                            break
                         continue
 
                     reasoning_parsed = json.loads(reasoning) if isinstance(reasoning, str) else reasoning
@@ -203,6 +202,7 @@ class EB_NavigationEvaluator():
                             self.planner.update_info(info)
                             img_path = self.env.save_image(obs)
                             episode_info['reward'].append(reward)
+                            episode_info['num_invalid_actions'] += (info['last_action_success'] == 0)
 
                             if done:
                                 break
@@ -251,11 +251,17 @@ class EB_NavigationEvaluator():
                         self.planner.update_info(info)
                         img_path = self.env.save_image(obs)
                         episode_info['reward'].append(reward)
+                        episode_info['num_invalid_actions'] += (info['last_action_success'] == 0)
 
                 except Exception as e:
-                    time.sleep(1)
-                    print(e)
+                    episode_info['num_exceptions'] = episode_info.get('num_exceptions', 0) + 1
+                    logger.warning(f"Error during planner act or env step: {e}")
                     print("retrying...")
+                    time.sleep(1)
+                    # Guard against an infinite retry loop on a persistently failing step.
+                    if episode_info['num_exceptions'] >= self.env._max_invalid_actions:
+                        logger.error("Too many consecutive exceptions, stopping episode.")
+                        break
 
 
             # evaluation metrics

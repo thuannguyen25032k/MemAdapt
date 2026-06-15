@@ -98,6 +98,3 @@ python embodiedbench/scripts/train_memory_adapter_grpo.py \
     --output_dir outputs/memory_adapter_rl/grpo_qwen7b
 ```
 
-> **Single-GPU?** Use the Unsloth backend instead — see the *Unsloth Backend* section in
-> [docs/sft_training.md](../sft_training.md).
-

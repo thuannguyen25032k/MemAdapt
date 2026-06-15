@@ -73,11 +73,7 @@ class MemoryAdapterTrainer:
 
         eval_strategy = "steps" if self.eval_dataset is not None else "no"
 
-        # Unsloth applies its own gradient checkpointing inside get_peft_model,
-        # so HF's must be disabled to avoid double-wrapping the model.
         gradient_checkpointing = t.gradient_checkpointing
-        if getattr(self.cfg.model, "use_unsloth", False):
-            gradient_checkpointing = False
 
         return TrainingArguments(
             output_dir=t.output_dir,

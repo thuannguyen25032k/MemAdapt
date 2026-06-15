@@ -70,7 +70,7 @@ grpo:
   kl_beta: 0.04          # KL divergence coefficient
   temperature: 0.9       # rollout sampling temperature
   top_p: 0.95            # nucleus sampling top-p
-  max_new_tokens: 512    # max tokens per completion
+  max_new_tokens: 2048    # max tokens per completion
 
 # Logging
 report_to: "wandb"

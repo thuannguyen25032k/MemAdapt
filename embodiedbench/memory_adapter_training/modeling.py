@@ -170,8 +170,6 @@ def get_trainable_model(cfg) -> Tuple:  # noqa: ANN001
     -------
     (model, tokenizer)
     """
-    if cfg.model.use_unsloth:
-        return load_unsloth_model(cfg)
 
     model = load_base_model(cfg)
     tokenizer = load_tokenizer(cfg)
@@ -186,58 +184,3 @@ def get_trainable_model(cfg) -> Tuple:  # noqa: ANN001
 
     return model, tokenizer
 
-
-def load_unsloth_model(cfg) -> Tuple:  # noqa: ANN001
-    """
-    Load + LoRA-wrap a model via Unsloth's ``FastLanguageModel``.
-
-    Unsloth must be imported before transformers/peft to apply its patches, so
-    the import lives here. The returned model/tokenizer are HF-compatible and
-    plug directly into the existing Trainer / collator / checkpoint code.
-    """
-    import torch
-    from unsloth import FastLanguageModel  # type: ignore
-
-    model_cfg = cfg.model
-    dtype_map = {
-        "bfloat16": torch.bfloat16,
-        "float16": torch.float16,
-        "float32": torch.float32,
-        "auto": None,
-    }
-    dtype = dtype_map.get(model_cfg.torch_dtype, None)
-
-    logger.info(f"[Modeling] Loading Unsloth model: {model_cfg.model_name_or_path}")
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=model_cfg.model_name_or_path,
-        max_seq_length=cfg.dataset.max_seq_length,
-        dtype=dtype,
-        load_in_4bit=model_cfg.load_in_4bit,
-        load_in_8bit=model_cfg.load_in_8bit,
-        trust_remote_code=model_cfg.trust_remote_code,
-    )
-
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-        tokenizer.pad_token_id = tokenizer.eos_token_id
-
-    if cfg.lora.enabled:
-        lora_cfg = cfg.lora
-        target_modules = lora_cfg.target_modules or [
-            "q_proj", "k_proj", "v_proj", "o_proj",
-            "gate_proj", "up_proj", "down_proj",
-        ]
-        logger.info("[Modeling] Applying Unsloth LoRA adapter")
-        model = FastLanguageModel.get_peft_model(
-            model,
-            r=lora_cfg.r,
-            lora_alpha=lora_cfg.alpha,
-            lora_dropout=lora_cfg.dropout,
-            bias=lora_cfg.bias,
-            target_modules=target_modules,
-            use_gradient_checkpointing="unsloth" if cfg.training.gradient_checkpointing else False,
-            random_state=cfg.training.seed,
-        )
-
-    sync_model_tokenizer_config(model, tokenizer)
-    return model, tokenizer

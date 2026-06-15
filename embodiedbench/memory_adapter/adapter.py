@@ -76,12 +76,12 @@ def build_planner_context(output: MemoryAdapterOutput) -> str:
             lines.append(f"- {step}")
         lines.append("")
 
-    if output.fallback_strategy:
-        lines.append(
-            "**Fallback Strategy**: Follow these fallback strategies when an action fails:"
-        )
-        for rule in output.fallback_strategy:
-            lines.append(f"- {rule}")
+    # if output.fallback_strategy:
+    #     lines.append(
+    #         "**Fallback Strategy**: Follow these fallback strategies when an action fails:"
+    #     )
+    #     for rule in output.fallback_strategy:
+    #         lines.append(f"- {rule}")
     
     lines.append(
         "\nAlways verify these against the live observation. If the image clearly contradicts these, trust the image."

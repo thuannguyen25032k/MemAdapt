@@ -3,7 +3,7 @@ model_name: "OpenGVLab/InternVL2_5-8B"
 model_type: remote  # "remote" means the model is accessed via API calls, as opposed to being loaded locally. This is important for how the planner constructs prompts and interacts with the model.
 down_sample_ratio: 1
 language_only: False
-eval_sets: []
+eval_sets: ["long_horizon"]
 chat_history: False
 n_shots: 5
 detection_box: False

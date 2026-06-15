@@ -246,6 +246,11 @@ class VLMPlanner():
                         self.metrics.adapter_fallbacks += 1
 
                 if adapted_prompt.strip():
+                    # # Spatial memory is omitted from the adapter output; inject the
+                    # # freshly retrieved spatial context so the planner still sees it.
+                    # adapted_prompt = self._augment_with_spatial(
+                    #     adapted_prompt, getattr(ctx, "spatial_context", "")
+                    # )
                     self.last_adapted_memory_prompt = adapted_prompt
                     self.last_memory_prompt = adapted_prompt
                     if self.metrics is not None:
@@ -366,35 +371,42 @@ class VLMPlanner():
         )
         env_fb = "and environment feedback " if self.use_feedback else ""
         action_range = f"0 ~ {len(self.actions)-1}"
-        if self.language_only:
-            return (
-                f"\n\nConsidering the above interaction history and the current image, to achieve the human instruction: '{user_instruction}'. "
-                f"You need to summarize interaction history {env_fb}{failure_clause}.{critic_clause} "
-                f"Then, output a NEW plan to achieve the goal from the current state. "
-                f"At the end, output the executable plan with action ids({action_range}) from the available actions."
-            )
+        # Visual planners are asked to describe the scene first; language-only ones are not.
+        scene_clause = "" if self.language_only else "describe the current scene, "
         return (
             f"\n\nConsidering the above interaction history and the current image, to achieve the human instruction: '{user_instruction}'. "
-            f"You need to describe the current scene, summarize interaction history {env_fb}{failure_clause}.{critic_clause} "
+            f"You need to {scene_clause}summarize interaction history {env_fb}{failure_clause}.{critic_clause} "
             f"Then, output a NEW plan to achieve the goal from the current state. "
             f"At the end, output the executable plan with action ids({action_range}) from the available actions."
         )
 
+    def _build_system_header(self, user_instruction: str, memory_prompt: str) -> str:
+        """Build the system prompt header (few-shot examples + instruction + memory).
+
+        Shared by the first-step and no-chat-history replanning branches.
+        """
+        if self.n_shot >= 1:
+            examples = '\n\n'.join(
+                f'## Task Execution Example {i}: \n {x}'
+                for i, x in enumerate(self.examples[:self.n_shot])
+            )
+        else:
+            examples = ''
+        prompt = self.system_prompt.format(len(self.actions) - 1, self.available_action_str, examples)
+        prompt += f'\n## Now the human instruction is: {user_instruction}.'
+        if memory_prompt:
+            prompt += "\n\n" + memory_prompt
+        return prompt
+
     def process_prompt(self, user_instruction, prev_act_feedback=[], memory_prompt=''):
         user_instruction = user_instruction.rstrip('.')
         if len(prev_act_feedback) == 0:
-            if self.n_shot >= 1:
-                prompt = self.system_prompt.format(len(self.actions)-1, self.available_action_str, '\n\n'.join([f'## Task Execution Example {i}: \n {x}' for i,x in enumerate(self.examples[:self.n_shot])])) 
-            else:
-                prompt = self.system_prompt.format(len(self.actions)-1, self.available_action_str, '')
-            prompt += f'\n## Now the human instruction is: {user_instruction}.'
-            if memory_prompt:
-                prompt += "\n\n" + memory_prompt
+            prompt = self._build_system_header(user_instruction, memory_prompt)
             if self.language_only:
                 prompt += f"\n You are supposed to output in json. You need to output your reasoning steps and plan. At the end, output the action id (0 ~ {len(self.actions)-1}) from the available actions to excute."
             else:
                 prompt += f"\n You are supposed to output in json. You need to describe current visual state from the image, output your reasoning steps and plan. At the end, output the action id (0 ~ {len(self.actions)-1}) from the available actions to excute."
-        
+
         elif self.chat_history:
             prompt = memory_prompt + "\n\n" if memory_prompt else ""
             prompt += f'The human instruction is: {user_instruction}.'
@@ -402,13 +414,7 @@ class VLMPlanner():
             prompt += self._format_action_history(prev_act_feedback)
             prompt += self._replan_tail(user_instruction, prev_act_feedback)
         else:
-            if self.n_shot >= 1:
-                prompt = self.system_prompt.format(len(self.actions)-1, self.available_action_str, '\n\n'.join([f'## Task Execution Example  {i}: \n {x}' for i,x in enumerate(self.examples[:self.n_shot])])) 
-            else:
-                prompt = self.system_prompt.format(len(self.actions)-1, self.available_action_str, '')
-            prompt += f'\n## Now the human instruction is: {user_instruction}.'
-            if memory_prompt:
-                prompt += "\n\n" + memory_prompt
+            prompt = self._build_system_header(user_instruction, memory_prompt)
             prompt += '\n\n The action history:'
             prompt += self._format_action_history(prev_act_feedback)
             prompt += self._replan_tail(user_instruction, prev_act_feedback)
@@ -709,6 +715,23 @@ class VLMPlanner():
         return action, out
 
 
+    def _respond_with_retry(self, rate_limit_sleep: int = 0, retry_sleep: int = 60) -> str:
+        """Call the model once, retrying a single time after a sleep on failure.
+
+        ``rate_limit_sleep`` : pause after a *successful* call (rate-limited models).
+        ``retry_sleep``      : pause before the single retry when the call raises.
+        """
+        try:
+            out = self.model.respond(self.episode_messages)
+            if rate_limit_sleep:
+                time.sleep(rate_limit_sleep)
+            return out
+        except Exception as e:
+            print("An unexpected error occurred:", e)
+            time.sleep(retry_sleep)
+            return self.model.respond(self.episode_messages)
+
+
     def act(self, observation, user_instruction):
         if type(observation) == dict:
             obs = observation[self.obs_key]
@@ -744,24 +767,10 @@ class VLMPlanner():
                     logger.debug(f"Model Input:\n{text_content}\n")
 
         if any(m in self.model_name for m in _GEMINI_RATE_LIMITED_MODELS):
-            try: 
-                out = self.model.respond(self.episode_messages)
-                time.sleep(15)
-            except Exception as e:
-                print("An unexpected error occurred:", e)
-                time.sleep(60)
-                out = self.model.respond(self.episode_messages)
+            out = self._respond_with_retry(rate_limit_sleep=15, retry_sleep=60)
         else:
-            try: 
-                out = self.model.respond(self.episode_messages)
-            except Exception as e:
-                print("An unexpected error occurred:", e)
-
-                if self.model_type != 'local':
-                    time.sleep(60)
-                else:
-                    time.sleep(20)
-                out = self.model.respond(self.episode_messages)
+            retry_sleep = 20 if self.model_type == 'local' else 60
+            out = self._respond_with_retry(retry_sleep=retry_sleep)
         logger.debug(f"Model Output:\n{out}\n")
         self._save_planner_log(prompt, obs, out)
 

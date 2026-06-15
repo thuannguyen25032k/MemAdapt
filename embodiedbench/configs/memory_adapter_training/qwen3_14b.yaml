@@ -20,11 +20,11 @@ dataset:
   # Filtered SFT targets produced by filter_sft_targets.py.
   # List multiple files to merge domains into a single training run.
   train_path:
-    - memory_adapter_dataset/alfred_memory_logs/sft_filtered/sft_targets_filtered.jsonl
-    - memory_adapter_dataset/habitat_memory_logs/sft_filtered/sft_targets_filtered.jsonl
+    - MemGuide/alfred_memory_logs/sft_filtered/sft_targets_filtered.jsonl
+    - MemGuide/habitat_memory_logs/sft_filtered/sft_targets_filtered.jsonl
   val_path: ""
   val_ratio: 0.1            # auto hold-out split when val_path is empty
-  max_seq_length: 8192
+  max_seq_length: 8096
 
 training:
   output_dir: outputs/memory_adapter_training/qwen3_14b
@@ -63,7 +63,7 @@ lora:
     - down_proj
 
 generation:
-  max_new_tokens: 1024
+  max_new_tokens: 4096
   temperature: 0.7
   top_p: 0.9
   do_sample: false

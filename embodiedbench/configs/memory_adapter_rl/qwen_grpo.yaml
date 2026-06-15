@@ -58,7 +58,7 @@ grpo:
   kl_beta: 0.04
   temperature: 0.9
   top_p: 0.95
-  max_new_tokens: 512
+  max_new_tokens: 2048
   rollout_batch_size: 4
   advantage_epsilon: 1.0e-8
 

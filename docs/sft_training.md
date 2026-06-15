@@ -43,7 +43,6 @@ model:
   load_in_4bit: false         # set true for QLoRA (halves VRAM)
   torch_dtype: bfloat16
   enable_thinking: false      # must match inference
-  use_unsloth: false          # set true to use the Unsloth backend (see below)
 
 dataset:
   train_path:
@@ -73,38 +72,6 @@ lora:
   bias: none
   target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
 ```
-
-## Unsloth Backend (single-GPU, lower VRAM)
-
-For a single-GPU setup (e.g. one RTX 6000 Ada 48 GB), use the **Unsloth** backend, which
-loads the model in 4-bit and applies memory-efficient gradient checkpointing — roughly
-40–60% less VRAM and ~1.5–2× faster than the standard HF + PEFT path. Set
-`model.use_unsloth: true` (and typically `load_in_4bit: true`) in the config; everything
-else — trainer, collator, checkpoint saving — is unchanged.
-
-```bash
-# 1) Create the dedicated environment (one-time)
-conda env create -f conda_envs/environment_unsloth.yaml
-conda activate memadapt-unsloth
-pip install -e .
-
-# 2) Train with the Unsloth config
-python -m embodiedbench.memory_adapter_training.train_sft \
-    --config embodiedbench/configs/memory_adapter_training/qwen3_14b_unsloth.yaml
-```
-
-When `use_unsloth: true`, the trainer disables HF's gradient checkpointing because
-Unsloth applies its own inside `get_peft_model`. The default HF/PEFT path
-(`qwen3_14b.yaml`) is unaffected and still supports multi-GPU `device_map="auto"`.
-
-## Hardware Requirements
-
-| Config | GPU | VRAM | Time |
-|---|---|---|---|
-| `qwen3_14b.yaml` (bf16 LoRA) | 2× A100 80 GB | ~60 GB | ~4 h |
-| `qwen3_14b.yaml` (`load_in_4bit: true`) | 1× A100 80 GB | ~16 GB | ~4 h |
-| `qwen3_14b_unsloth.yaml` | 1× RTX 6000 Ada 48 GB | ~12–16 GB | ~3 h |
-| `qwen3_32b_fp8.yaml` | 1× RTX 6000 Ada 48 GB | ~22 GB | ~6 h |
 
 ## Checkpoint Layout
 

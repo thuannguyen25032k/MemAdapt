@@ -29,7 +29,7 @@ memory:
   use_embeddings: true
   embedding_model: "bge-large-en-v1.5"   # or "nomic-embed-text-v1.5"
   storage_dir: "alfred_memory_store"
-  top_k_per_memory: 5
+  top_k_per_memory: 10
   spatial_enabled: true
   temporal_enabled: true
   episodic_enabled: true
@@ -38,10 +38,10 @@ memory:
 # --- Memory Adapter config (used when mode is adapted_planner / adapted_planner_critic) ---
 memory_adapter:
   enabled: true
-  model_name_or_path: "embodiedbench/memory_adapter/models/Qwen3-14B"
+  model_name_or_path: "embodiedbench/memory_adapter/models/Qwen3-14B_168"
   device: "auto"
   torch_dtype: "bfloat16"   # Qwen3-14B is a standard BF16 model
-  max_new_tokens: 2048
+  max_new_tokens: 4096
   temperature: 0.0
   do_sample: false
   enable_thinking: false    # set to true to surface Qwen3 chain-of-thought <think> blocks
@@ -66,10 +66,10 @@ memory_adapter:
 # (creates memory+adapter and attaches both to planner and critic).
 memory_experiment:
   mode: adapted_planner              # change to run different ablations
-  log_memory_outputs: true
-  log_adapter_outputs: true
+  log_memory_outputs: false
+  log_adapter_outputs: false
   log_dir: "./alfred_memory_logs"
-  save_training_records: true
+  save_training_records: false
 
 # --- Video / logging ---
 record_video: null          # set to True to record annotated episode videos

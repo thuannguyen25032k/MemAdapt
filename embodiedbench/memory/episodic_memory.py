@@ -441,7 +441,7 @@ class EpisodicMemory(BaseMemory):
         results.sort(key=lambda x: x[0], reverse=True)
         return [
             RetrievedMemory(item=ep.to_memory_item(), score=score, reason=_episode_reason(ep))
-            for score, ep in results[1:top_k+1]  # skip the top-1 match (too close to be useful as a "similar episode")
+            for score, ep in results[0:top_k]  # skip the top-1 match (too close to be useful as a "similar episode")
         ]
 
     # ------------------------------------------------------------------

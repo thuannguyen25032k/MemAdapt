@@ -267,7 +267,7 @@ memory_adapter:
   model_name_or_path: "Qwen/Qwen2.5-1.5B-Instruct"   # any HF causal LM
   device: auto
   torch_dtype: auto
-  max_new_tokens: 512
+  max_new_tokens: 2048
   temperature: 0.0
   do_sample: false
   load_in_4bit: false          # set true to reduce VRAM

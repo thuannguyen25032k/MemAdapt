@@ -38,10 +38,6 @@ class ModelConfig:
     # Qwen3-style thinking mode; must match the inference setting so the
     # training chat template aligns with deployment.
     enable_thinking: bool = False
-    # Use Unsloth's FastLanguageModel backend (single-GPU, lower VRAM, faster).
-    # When True, modeling.py loads + LoRA-wraps the model via Unsloth instead of
-    # the standard transformers + PEFT path.
-    use_unsloth: bool = False
 
 
 @dataclass

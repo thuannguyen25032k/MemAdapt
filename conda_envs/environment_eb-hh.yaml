@@ -1,4 +1,4 @@
-name: embench_hh
+name: embench
 channels:
   - defaults
   - conda-forge

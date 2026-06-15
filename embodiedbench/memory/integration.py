@@ -153,7 +153,7 @@ def create_memory_adapter_from_config(cfg: Any) -> Optional["MemoryAdapter"]:
 
     Returns ``None`` when the package is unavailable, the key is absent, or
     ``enabled`` is false.  Raises ``ValueError`` if ``enabled=True`` but
-    neither ``model_name_or_path`` nor ``openai_model`` is set.
+    neither ``model_name_or_path`` nor ``api_model`` is set.
     """
     if not _ADAPTER_AVAILABLE:
         return None
@@ -161,19 +161,19 @@ def create_memory_adapter_from_config(cfg: Any) -> Optional["MemoryAdapter"]:
     if not _cfg_enabled(adapter_cfg):
         return None
 
-    model_name   = _get_cfg_key(adapter_cfg, "model_name_or_path", None)
-    openai_model = _get_cfg_key(adapter_cfg, "openai_model", None)
+    model_name = _get_cfg_key(adapter_cfg, "model_name_or_path", None)
+    api_model  = _get_cfg_key(adapter_cfg, "api_model", None)
 
-    if not model_name and not openai_model:
+    if not model_name and not api_model:
         raise ValueError(
             "[MemoryAdapter] memory_adapter.enabled=True but neither "
-            "memory_adapter.model_name_or_path nor memory_adapter.openai_model is set."
+            "memory_adapter.model_name_or_path nor memory_adapter.api_model is set."
         )
 
     try:
         adapter_config = MemoryAdapterConfig.from_mapping(adapter_cfg)
         adapter = MemoryAdapter(adapter_config)
-        backend = adapter_config.openai_model or adapter_config.model_name_or_path
+        backend = adapter_config.api_model or adapter_config.model_name_or_path
         logger.info(f"[MemoryAdapter] Created. model={backend}")
         return adapter
     except Exception as e:

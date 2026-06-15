@@ -3,9 +3,9 @@ model_name: gpt-4o-mini
 down_sample_ratio: 1
 model_type: remote
 language_only: False
-eval_sets: []
+eval_sets: ["base", "common_sense", "complex_instruction", "long_horizon"]
 chat_history: False
-n_shots: 1
+n_shots: 10
 multistep: False
 resolution: 500
 exp_name: baseline

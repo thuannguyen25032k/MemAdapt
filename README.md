@@ -274,10 +274,6 @@ python -m embodiedbench.memory_adapter_training.train_sft \
                  memory_adapter_dataset/habitat_memory_logs/sft_filtered/sft_targets_filtered.jsonl \
     --output_dir outputs/memory_adapter_training/qwen3_14b
 ```
-
-> **Unsloth backend (single-GPU, lower VRAM):** use `qwen3_14b_unsloth.yaml` inside the
-> `memadapt-unsloth` conda environment. See [conda_envs/environment_unsloth.yaml](conda_envs/environment_unsloth.yaml).
-
 ---
 
 ## Deployment

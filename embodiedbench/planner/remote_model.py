@@ -53,6 +53,8 @@ class RemoteModel:
                 )
             elif "Qwen3-VL" in self.model_name:
                 self.model = OpenAI(base_url = remote_url)
+            elif "Qwen3.5" in self.model_name:
+                self.model = OpenAI(base_url = remote_url)
             elif "Qwen2-VL" in self.model_name:
                 self.model = OpenAI(base_url = remote_url)
             elif "Qwen2.5-VL" in self.model_name:
@@ -86,7 +88,9 @@ class RemoteModel:
             elif 'qwen' in self.model_name:
                 return self._call_gpt(message_history)
             elif "Qwen3-VL" in self.model_name:
-                return self._call_qwen7b(message_history)
+                return self._call_qwen3vl(message_history)
+            elif "Qwen3.5" in self.model_name:
+                return self._call_qwen35(message_history)
             elif "Qwen2-VL-7B-Instruct" in self.model_name:
                 return self._call_qwen7b(message_history)
             elif "Qwen2.5-VL-7B-Instruct" in self.model_name:
@@ -237,7 +241,30 @@ class RemoteModel:
 
         out = response.choices[0].message.content
         return out
-    
+
+    def _call_qwen3vl(self, message_history):
+        # Qwen3-VL thinks by default; disable thinking via chat_template_kwargs.
+        # json_schema response_format is not supported by the lmdeploy backend
+        # for this model (returns empty string), so we omit it and rely on
+        # fix_json to extract valid JSON from the raw output.
+        if not self.language_only:
+            message_history = convert_format_2gemini(message_history)
+
+        response = self.model.chat.completions.create(
+            model=self.model_name,
+            messages=message_history,
+            temperature=temperature,
+            max_tokens=max_completion_tokens,
+            extra_body={
+                "chat_template_kwargs": {"enable_thinking": False},
+                "thinking_budget": 0,
+            },
+        )
+
+        out = response.choices[0].message.content
+        out = fix_json(out)
+        return out
+
     def _call_llama90(self, message_history: list):
         if self.task_type == "manip":
             response = self.model.chat.completions.create(
@@ -289,6 +316,43 @@ class RemoteModel:
         if not self.language_only:
             message_history = convert_format_2gemini(message_history)
 
+        # lmdeploy's PyTorch backend + xgrammar constrained decoding is incompatible
+        # with VLM (image) inputs: vision features corrupt the grammar state, causing
+        # the sampler to produce garbage tokens (e.g. repeated '!'). Only use
+        # json_schema for text-only (language_only=True) calls; for VLM calls rely on
+        # fix_json to extract valid JSON from the free-form output.
+        if self.language_only:
+            if self.task_type == 'manip':
+                response_format = dict(type='json_schema', json_schema=dict(name='embodied_planning', schema=llm_generation_guide_manip))
+            else:
+                response_format = dict(type='json_schema', json_schema=dict(name='embodied_planning', schema=llm_generation_guide))
+            response = self.model.chat.completions.create(
+                model=self.model_name,
+                messages=message_history,
+                response_format=response_format,
+                temperature=temperature,
+                max_tokens=max_completion_tokens
+            )
+        else:
+            # No response_format — free generation + fix_json post-processing.
+            response = self.model.chat.completions.create(
+                model=self.model_name,
+                messages=message_history,
+                temperature=temperature,
+                max_tokens=max_completion_tokens
+            )
+
+        # easy to meet json errors
+        out = response.choices[0].message.content
+        out = fix_json(out)
+        return out
+    
+    def _call_qwen35(self, message_history):
+        # Qwen3.5 is a VLM that thinks by default. Disable thinking via
+        # chat_template_kwargs so the response is the plan JSON only.
+        if not self.language_only:
+            message_history = convert_format_2gemini(message_history)
+
         if not self.language_only:
             if self.task_type == 'manip':
                 response_format=dict(type='json_schema',  json_schema=dict(name='embodied_planning',schema=vlm_generation_guide_manip))
@@ -299,13 +363,14 @@ class RemoteModel:
                 response_format=dict(type='json_schema',  json_schema=dict(name='embodied_planning',schema=llm_generation_guide_manip))
             else:
                 response_format=dict(type='json_schema',  json_schema=dict(name='embodied_planning',schema=llm_generation_guide))
-        
+
         response = self.model.chat.completions.create(
             model=self.model_name,
             messages=message_history,
             response_format=response_format,
             temperature=temperature,
-            max_tokens=max_completion_tokens
+            max_tokens=max_completion_tokens,
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
 
         # easy to meet json errors

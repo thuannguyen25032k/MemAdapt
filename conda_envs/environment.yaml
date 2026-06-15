@@ -1,9 +1,8 @@
 name: embench
 channels:
-  - defaults
+  - aihabitat
   - conda-forge
-  - https://repo.anaconda.com/pkgs/main
-  - https://repo.anaconda.com/pkgs/r
+  - defaults
 dependencies:
   - _libgcc_mutex=0.1=conda_forge
   - _openmp_mutex=4.5=2_gnu
@@ -12,8 +11,8 @@ dependencies:
   - brotli-bin=1.1.0=hb9d3cd8_2
   - bzip2=1.0.8=h4bc722e_7
   - c-ares=1.34.3=hb9d3cd8_1
-  - ca-certificates=2024.11.26=h06a4308_0
-  - certifi=2024.8.30=py39h06a4308_0
+  - ca-certificates=2026.5.20=hbd8a1cb_0
+  - certifi=2025.8.3=pyhd8ed1ab_0
   - colorama=0.4.6=pyhd8ed1ab_0
   - contourpy=1.3.0=py39h74842e3_2
   - cycler=0.12.1=pyhd8ed1ab_0
@@ -24,7 +23,7 @@ dependencies:
   - fontconfig=2.14.1=h55d465d_3
   - fonttools=4.55.0=py39h9399b63_0
   - freetype=2.12.1=h4a9f257_0
-  - git-lfs=3.6.0=h647637d_0
+  - git-lfs=3.7.1=ha8f183a_1
   - gitdb=4.0.11=pyhd8ed1ab_0
   - gitpython=3.1.43=pyhd8ed1ab_0
   - glib=2.78.4=h6a678d5_0
@@ -33,13 +32,17 @@ dependencies:
   - gnutls=3.6.13=h85f3911_1
   - gst-plugins-base=1.14.1=h6a678d5_1
   - gstreamer=1.14.1=h5eee18b_1
+  - habitat-sim-mutex=1.0=headless_bullet
+  - headless=2.0=0
   - icu=73.2=h59595ed_0
   - imageio=2.36.1=pyh12aca89_1
   - imageio-ffmpeg=0.5.1=pyhd8ed1ab_0
   - importlib-resources=6.4.5=pyhd8ed1ab_0
   - importlib_resources=6.4.5=pyhd8ed1ab_0
   - jbig=2.1=h7f98852_2003
+  - jinja2=3.1.6=pyhd8ed1ab_0
   - jpeg=9e=h0b41bf4_3
+  - json-repair=0.30.3=pyhd8ed1ab_0
   - keyutils=1.6.1=h166bdaf_0
   - kiwisolver=1.4.7=py39h74842e3_0
   - krb5=1.20.1=h81ceb04_0
@@ -83,7 +86,9 @@ dependencies:
   - libstdcxx=14.2.0=hc0a3c3a_1
   - libstdcxx-ng=14.2.0=h4852527_1
   - libtiff=4.3.0=hf544144_1
+  - libtorch=2.4.1=cpu_generic_hb3b73e9_0
   - libuuid=1.41.5=h5eee18b_0
+  - libuv=1.52.1=h280c20c_0
   - libwebp-base=1.4.0=hd590300_0
   - libxcb=1.15=h0b41bf4_0
   - libxkbcommon=1.7.0=h662e7e4_0
@@ -91,15 +96,18 @@ dependencies:
   - lz4-c=1.9.4=hcb278e6_0
   - matplotlib=3.9.1=py39hf3d152e_1
   - matplotlib-base=3.9.1=py39h0565ad7_2
+  - mpmath=1.3.0=pyhd8ed1ab_1
   - munkres=1.1.4=pyh9f0ad1d_0
   - mysql=8.4.0=h29a9f33_1
   - ncurses=6.4=h6a678d5_0
   - nettle=3.6=he412f7d_0
+  - networkx=3.2.1=pyhd8ed1ab_0
+  - nomkl=1.0=h5ca1d4c_0
   - olefile=0.47=pyhd8ed1ab_0
   - openh264=2.1.1=h780b84a_0
   - openjpeg=2.4.0=hb52868f_1
   - openldap=2.6.5=h389dcaa_0
-  - openssl=3.4.0=hb9d3cd8_0
+  - openssl=3.6.2=h35e630c_0
   - packaging=24.2=pyhff2d567_1
   - pcre2=10.42=hebb0a14_1
   - pip=24.2=py39h06a4308_0
@@ -117,6 +125,7 @@ dependencies:
   - scipy=1.13.1=py39haf93ffa_0
   - sip=6.5.1=py39he80948d_2
   - six=1.16.0=pyh6c4a22f_0
+  - sleef=3.9.0=ha0421bc_0
   - smmap=3.0.5=pyh44b312d_0
   - sqlite=3.45.3=h5eee18b_0
   - tk=8.6.14=h39e8969_0
@@ -124,9 +133,9 @@ dependencies:
   - toml=0.10.2=pyhd8ed1ab_0
   - tornado=6.4.2=py39h8cd3c5a_0
   - tqdm=4.67.1=pyhd8ed1ab_0
-  - typing_extensions=4.12.2=pyha770c72_0
   - unicodedata2=15.1.0=py39h8cd3c5a_1
   - wheel=0.44.0=py39h06a4308_0
+  - withbullet=2.0=0
   - x264=1!161.3030=h7f98852_1
   - xkeyboard-config=2.42=h4ab18f5_0
   - xorg-fixesproto=5.0=hb9d3cd8_1003
@@ -151,7 +160,7 @@ dependencies:
   - zlib=1.2.13=h5eee18b_1
   - zstd=1.5.6=hc292b87_0
   - pip:
-      - accelerate==1.1.1
+      - accelerate==1.10.1
       - addict==2.4.0
       - ai2thor==2.1.0
       - aiohappyeyeballs==2.4.4
@@ -171,6 +180,7 @@ dependencies:
       - aws-requests-auth==0.4.3
       - babel==2.17.0
       - beautifulsoup4==4.13.3
+      - bitsandbytes==0.41.0
       - bleach==6.2.0
       - blinker==1.9.0
       - botocore==1.35.71
@@ -188,16 +198,19 @@ dependencies:
       - diskcache==5.6.3
       - distro==1.9.0
       - einops==0.8.0
+      - entrypoints==0.4
+      - eval-type-backport==0.3.1
       - exceptiongroup==1.2.2
       - executing==2.2.0
       - fastapi==0.115.6
       - fastjsonschema==2.21.1
-      - filelock==3.16.1
+      - filelock==3.19.1
       - fire==0.7.0
-      - flask==1.1.2
+      - flash-attn==2.8.3
+      - flask==2.0.3
       - fqdn==1.5.1
       - frozenlist==1.5.0
-      - fsspec==2024.9.0
+      - fsspec==2025.10.0
       - google-ai-generativelanguage==0.6.10
       - google-api-core==2.24.0
       - google-api-python-client==2.157.0
@@ -210,22 +223,26 @@ dependencies:
       - gym==0.23.0
       - gym-notices==0.0.8
       - h11==0.14.0
+      - habitat-lab==0.3.0
+      - habitat-sim==0.3.0
+      - hf-xet==1.5.0
       - httpcore==1.0.7
       - httplib2==0.22.0
       - httpx==0.27.0
-      - huggingface-hub==0.26.3
+      - huggingface-hub==0.36.2
       - hydra-core==1.3.2
       - idna==3.10
       - importlib-metadata==8.5.0
+      - iniconfig==2.1.0
       - interegular==0.3.3
       - ipykernel==6.29.5
       - ipython==8.18.1
       - isoduration==20.11.0
-      - itsdangerous==1.1.0
+      - itsdangerous==2.2.0
       - jedi==0.19.2
-      - jinja2==2.11.3
       - jiter==0.8.0
       - jmespath==1.0.1
+      - joblib==1.5.3
       - json5==0.10.0
       - jsonpointer==3.0.0
       - jsonschema==4.23.0
@@ -234,25 +251,25 @@ dependencies:
       - jupyter-core==5.7.2
       - jupyter-events==0.12.0
       - jupyter-lsp==2.2.5
+      - jupyter-server==1.15.6
       - jupyter-server-terminals==0.5.3
       - jupyterlab-pygments==0.3.0
       - lark==1.2.2
       - llvmlite==0.39.1
-      - lmdeploy
+      - lmdeploy==0.10.0
       - markdown-it-py==3.0.0
-      - markupsafe==1.1.1
+      - markupsafe==3.0.2
       - matplotlib-inline==0.1.7
       - mdurl==0.1.2
       - mistune==3.1.1
       - mmengine-lite==0.10.5
-      - mpmath==1.3.0
       - msgpack==1.1.0
       - multidict==6.1.0
       - multiprocess==0.70.16
       - nbclient==0.10.2
+      - nbconvert==5.5.0
       - nbformat==5.10.4
       - nest-asyncio==1.6.0
-      - networkx==3.2.1
       - notebook-shim==0.2.4
       - numba==0.56.4
       - numpy==1.23.5
@@ -266,8 +283,8 @@ dependencies:
       - nvidia-cusolver-cu12==11.4.5.107
       - nvidia-cusparse-cu12==12.1.0.106
       - nvidia-ml-py==12.560.30
-      - nvidia-nccl-cu12==2.20.5
-      - nvidia-nvjitlink-cu12==12.6.85
+      - nvidia-nccl-cu12==2.21.5
+      - nvidia-nvjitlink-cu12==12.9.86
       - nvidia-nvtx-cu12==12.1.105
       - omegaconf==2.3.0
       - openai==1.60.0
@@ -277,16 +294,20 @@ dependencies:
       - pandas==2.2.3
       - pandocfilters==1.5.1
       - parso==0.8.4
+      - partial-json-parser==0.2.1.1.post7
       - peft==0.11.1
       - pexpect==4.9.0
-      - pillow==11.0.0
+      - pillow==11.3.0
       - platformdirs==4.3.6
+      - pluggy==1.6.0
+      - polars==1.36.1
+      - polars-runtime-32==1.36.1
       - progressbar2==4.5.0
       - prometheus-client==0.21.1
       - prompt-toolkit==3.0.50
       - propcache==0.2.1
       - proto-plus==1.25.0
-      - protobuf==5.29.0
+      - protobuf==6.33.6
       - psutil==6.1.0
       - ptyprocess==0.7.0
       - pure-eval==0.2.3
@@ -298,8 +319,10 @@ dependencies:
       - pycparser==2.22
       - pydantic==2.10.3
       - pydantic-core==2.27.1
+      - pyflakes==3.4.0
       - pygments==2.18.0
       - pynvml==12.0.0
+      - pytest==8.4.2
       - python-json-logger==3.2.1
       - python-utils==3.9.1
       - python-xlib==0.33
@@ -307,6 +330,7 @@ dependencies:
       - pyyaml==6.0.2
       - pyzmq==26.2.1
       - qwen-vl-utils==0.0.8
+      - ray==2.51.2
       - referencing==0.35.1
       - regex==2024.11.6
       - requests==2.32.3
@@ -317,38 +341,48 @@ dependencies:
       - rpds-py==0.22.3
       - rsa==4.9
       - safetensors==0.4.5
+      - scikit-learn==1.6.1
       - send2trash==1.8.3
+      - sentence-transformers==5.1.2
       - sentencepiece==0.2.0
+      - sentry-sdk==2.61.0
       - setuptools==68.2.2
       - shortuuid==1.0.13
       - sniffio==1.3.1
       - soupsieve==2.6
       - stack-data==0.6.3
       - starlette==0.41.3
-      - sympy==1.13.3
+      - sympy==1.13.1
       - termcolor==2.5.0
       - terminado==0.18.1
+      - testpath==0.6.0
+      - threadpoolctl==3.6.0
       - tiktoken==0.8.0
       - tinycss2==1.4.0
-      - tokenizers==0.20.3
+      - tokenizers==0.22.2
       - tomli==2.2.1
-      - torch==2.4.0
-      - torchvision==0.19.0
+      - torch==2.5.1+cu121
       - traitlets==5.14.3
-      - transformers==4.46.2
-      - triton==3.0.0
+      - transformers==4.57.6
+      - triton==3.1.0
       - types-python-dateutil==2.9.0.20241206
+      - typing-extensions==4.15.0
       - tzdata==2024.2
+      - ultralytics==8.4.51
+      - ultralytics-thop==2.0.19
       - uri-template==1.3.0
       - uritemplate==4.1.1
       - urllib3==1.26.20
       - uvicorn==0.32.1
       - vocab==0.0.5
+      - vulture==2.16
+      - wandb==0.26.1
       - wcwidth==0.2.13
       - webcolors==24.11.1
       - webencodings==0.5.1
       - websocket-client==1.8.0
-      - werkzeug==1.0.1
+      - werkzeug==2.0.3
       - xxhash==3.5.0
       - yapf==0.43.0
       - yarl==1.18.3
+prefix: /home/necphy/anaconda3/envs/embench
