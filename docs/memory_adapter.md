@@ -157,8 +157,9 @@ memory_adapter:
   api_base_url: "http://localhost:8000/v1"
 ```
 
-See the **Deployment** section of the top-level `README.md` for the matching
-`lmdeploy serve api_server` command.
+See the **Merging the Checkpoint** and **Benchmark Evaluation** sections of the
+top-level `README.md` for the matching `merge_adapter.py` and
+`lmdeploy serve api_server` commands.
 
 
 ## How the Adapter Transforms Memory

@@ -3,7 +3,7 @@
 ## Overview
 
 Stage 1 of MemAdapt training fine-tunes **Qwen3-14B** on the filtered adapter-target
-dataset using QLoRA (4-bit NF4 base + LoRA adapters). This teaches the model to
+dataset using LoRA. This teaches the model to
 produce well-formed XML adapter outputs (`FORESIGHT_PLAN`, `FEASIBILITY_CRITERIA`,
 `FALLBACK_STRATEGY`) before GRPO refinement in Stage 2.
 
@@ -40,7 +40,7 @@ model:
   model_name_or_path: "embodiedbench/memory_adapter/models/Qwen3-14B"
   trust_remote_code: true
   use_flash_attention: true
-  load_in_4bit: false         # set true for QLoRA (halves VRAM)
+  load_in_4bit: false         # not used for SFT (LoRA only)
   torch_dtype: bfloat16
   enable_thinking: false      # must match inference
 

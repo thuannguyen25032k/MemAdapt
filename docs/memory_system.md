@@ -238,60 +238,13 @@ No simulator, model API, or external service required. The demo:
 
 ---
 
-## Memory Adapter (MemoryAdapter)
+## Memory Adapter Integration
 
-The **MemoryAdapter** is an optional LLM-backed module that transforms raw `MemoryContext` into structured guidance for the planner and critic.  It is **disabled by default** and loaded independently from the planner/critic models.
+The **MemoryAdapter** is an optional module that sits between `MemoryManager.retrieve()`
+and the VLM planner/critic.  It is **disabled by default**.  For the full API, config
+reference, and output format see [memory_adapter.md](memory_adapter.md).
 
-### How It Works
-
-```
-MemoryContext
-     │
-     ▼
-MemoryAdapter.adapt(MemoryAdapterInput)
-     │  (Hugging Face CausalLM generates structured output)
-     ▼
-MemoryAdapterOutput
-   ├── foresight_plan        → planner context (via build_planner_context)
-   ├── feasibility_criteria  → critic context  (via build_critic_context)
-   ├── fallback_strategy     → planner context (via build_planner_context)
-   ├── raw_output
-   └── parse_error
-```
-
-### Enabling via `config.yaml`
-
-```yaml
-memory_adapter:
-  enabled: true
-  model_name_or_path: "Qwen/Qwen2.5-1.5B-Instruct"   # any HF causal LM
-  device: auto
-  torch_dtype: auto
-  max_new_tokens: 2048
-  temperature: 0.0
-  do_sample: false
-  load_in_4bit: false          # set true to reduce VRAM
-  trust_remote_code: true
-  system_prompt_name: default  # or "planner_only" / "critic_only"
-  max_input_chars: 6000
-  max_memory_chars: 3500
-```
-
-### Hydra CLI Override
-
-```bash
-python -m embodiedbench.main \
-  env=alfred \
-  model_name=gpt-4o \
-  memory.enabled=true \
-  memory_adapter.enabled=true \
-  memory_adapter.model_name_or_path=Qwen/Qwen2.5-1.5B-Instruct \
-  memory_adapter.load_in_4bit=true
-```
-
-### Lifecycle
-
-The adapter is created **once per eval-set** (not per episode) and shared by the planner and critic:
+### Lifecycle (per eval-set)
 
 ```python
 self.memory_adapter = create_memory_adapter_from_config(self.config)
@@ -301,53 +254,27 @@ attach_memory_adapter_to_critic(self.dual_critic, self.memory_adapter)
 unload_memory_adapter(self.memory_adapter)   # frees GPU memory at run end
 ```
 
-### Fallback Behaviour
-
-If the adapter is absent, disabled, raises an exception, or returns empty/unsafe output, both the planner and critic transparently fall back to the raw `MemoryPromptFormatter` output.  **No behavior change unless the adapter is explicitly enabled.**
-
-### Running the Demo
-
-```bash
-# Requires: pip install transformers torch
-python examples/demo_memory_adapter.py
-
-# Custom model:
-python examples/demo_memory_adapter.py --model Qwen/Qwen2.5-1.5B-Instruct --mode planner
-```
-
-### Smoke Test (optional, downloads ~5 MB)
-
-```bash
-RUN_HF_ADAPTER_SMOKE=1 pytest tests/memory_adapter/test_memory_adapter_smoke.py -v
-```
-
-This verifies the full load→adapt→unload cycle with `sshleifer/tiny-gpt2`.  It checks **wiring only**, not output quality — the tiny model will produce low-quality/empty structured output.
-
-```bash
-# Custom model for smoke test:
-ADAPTER_SMOKE_MODEL=gpt2 RUN_HF_ADAPTER_SMOKE=1 pytest tests/memory_adapter/test_memory_adapter_smoke.py -v
-```
+If the adapter is absent, disabled, or returns empty output, both components fall back
+transparently to the raw `MemoryPromptFormatter` output.
 
 ---
 
 ## Experiment & Ablation Modes
 
-`setup_memory_experiment(cfg, planner, critic)` is the single entry-point used by every evaluator.  It reads `cfg.memory_experiment.mode` and wires up components accordingly.
+`setup_memory_experiment(cfg, planner, critic)` is the single entry-point used by every
+evaluator.  It reads `cfg.memory_experiment.mode` and wires up components accordingly.
 
-### Modes
-
-| Mode | MemoryManager | MemoryAdapter | Planner | Critic |
+| Mode | MemoryManager | MemoryAdapter | Planner injection | Critic injection |
 |---|---|---|---|---|
 | `none` | ✗ | ✗ | — | — |
 | `raw_planner` | ✓ | ✗ | ✓ | ✗ |
 | `raw_planner_critic` | ✓ | ✗ | ✓ | ✓ |
 | `adapted_planner` | ✓ | ✓ | ✓ | ✗ |
 | `adapted_planner_critic` | ✓ | ✓ | ✓ | ✓ |
-| *(absent)* | ✓ | ✓ | ✓ | ✓ |
+| *(key absent)* | ✓ | ✓ | ✓ | ✓ |
 
-*(absent)* = the `memory_experiment` key is not in the config → backward-compatible full attach.
-
-### Config
+*(key absent)* = the `memory_experiment` key is not in the config → backward-compatible
+full attach.
 
 ```yaml
 # embodiedbench/configs/config.yaml
@@ -357,166 +284,42 @@ memory_experiment:
   log_adapter_outputs: true
 ```
 
-### CLI Override
-
-```bash
-python -m embodiedbench.main env=alfred model_name=gpt-4o \
-  memory.enabled=true \
-  memory_experiment.mode=adapted_planner_critic \
-  memory_adapter.enabled=true \
-  memory_adapter.model_name_or_path=Qwen/Qwen2.5-1.5B-Instruct
-```
-
-### Test
-
 ```bash
 pytest tests/memory_adapter/test_memory_experiment_modes.py -v
 ```
 
 ---
 
-## Metrics & Logging (Step 21)
+## Metrics & Logging
 
-`MemoryExperimentMetrics` is a lightweight dataclass that accumulates per-episode counters for ablation analysis. It is injected into the planner and critic via `set_metrics()` and written into `episode_info['memory_metrics']` at the end of each episode.
+`MemoryExperimentMetrics` accumulates per-episode counters and is written into
+`episode_info['memory_metrics']` at episode end.
 
-### Counters
-
-| Counter | Where incremented |
+| Counter | Description |
 |---|---|
-| `memory_retrieval_calls` | After `MemoryManager.retrieve()` in planner and critic |
-| `planner_memory_injections` | When a non-empty memory prompt is returned to the planner |
-| `critic_memory_injections` | When a non-empty memory prompt is returned to the critic |
-| `adapter_planner_calls` / `adapter_critic_calls` | When `MemoryAdapter.adapt()` is entered |
-| `adapter_calls` | Sum of both adapter paths |
-| `adapter_fallbacks` | On code-fence / empty / exception in adapter output |
-| `stale_warning_count` | `len(ctx.stale_memory_warnings)` after retrieve |
-| `feasibility_constraint_count` | `len(ctx.feasibility_constraints)` after retrieve |
-| `planner_memory_prompt_chars` | `len(prompt)` for each planner injection |
-| `critic_memory_prompt_chars` | `len(prompt)` for each critic injection |
-| `adapted_planner_prompt_chars` | When adapter provides non-empty planner context |
-| `adapted_critic_prompt_chars` | When adapter provides non-empty critic context |
-| `critic_rejections` | When `VLMCritic.evaluate()` returns `valid=False` |
-| `replans`, `invalid_actions`, `env_steps`, `task_success`, `task_progress` | Copied from `episode_info` by `collect_episode_metrics()` |
+| `memory_retrieval_calls` | Calls to `MemoryManager.retrieve()` |
+| `planner_memory_injections` | Non-empty memory prompts returned to planner |
+| `critic_memory_injections` | Non-empty memory prompts returned to critic |
+| `adapter_calls` | Total `MemoryAdapter.adapt()` invocations |
+| `adapter_fallbacks` | Fallbacks due to empty / exception adapter output |
+| `planner_memory_prompt_chars` | Cumulative prompt chars injected to planner |
+| `critic_memory_prompt_chars` | Cumulative prompt chars injected to critic |
+| `critic_rejections` | Steps where `VLMCritic.evaluate()` returned `valid=False` |
+| `replans`, `invalid_actions`, `env_steps`, `task_success`, `task_progress` | From `episode_info` |
 
-### Usage
-
-```python
-from embodiedbench.memory.integration import (
-    create_metrics_from_config,
-    attach_metrics_to_planner,
-    attach_metrics_to_critic,
-    collect_episode_metrics,
-)
-
-# Once per eval-set:
-self.metrics = create_metrics_from_config(self.config)
-attach_metrics_to_planner(self.planner, self.metrics)
-attach_metrics_to_critic(self.dual_critic, self.metrics)
-
-# At episode start:
-self.metrics.reset_episode()
-
-# At episode end:
-collect_episode_metrics(self.metrics, episode_info)
-episode_info['memory_metrics'] = self.metrics.to_dict()
-```
-
-### Test
-
-```bash
-pytest tests/memory_adapter/test_memory_metrics.py -v
-```
-
----
-
-## Structured Logging & Training Data Collection (Step 22)
-
-`MemoryExperimentLogger` writes per-episode artifacts capturing everything the adapter sees and produces — enabling offline analysis and future SFT/RL training.
-
-### Output files
-
-| File | Description |
-|---|---|
-| `<log_dir>/episodes/<episode_id>.json` | Full episode record (all prompts, adapter output, trajectory, metrics) |
-| `<log_dir>/training_records.jsonl` | Compact SFT-ready row per episode (one JSON object per line) |
-
-### Training row schema
-
-```json
-{
-  "instruction":          "pick up the mug and put it in the drawer",
-  "observation_or_state": "<raw MemoryContext text>",
-  "retrieved_memory":     "<planner memory prompt>",
-  "adapter_target": {
-    "foresight_plan":          ["step 1: ...", "step 2: ..."],
-    "feasibility_criteria":    ["\"pick mug\": mug must be reachable"],
-    "fallback_strategy":       ["If \"cannot pick / not near\": navigate to table 1, then retry pick"]
-  },
-  "outcome": {
-    "success":  true,
-    "progress": 1.0,
-    "steps":    12,
-    "replans":  2
-  }
-}
-```
-
-### Config
+`MemoryExperimentLogger` writes per-episode JSON artifacts and a compact
+`training_records.jsonl` (SFT-ready rows) under `log_dir`.  Enable via:
 
 ```yaml
 memory_experiment:
   mode: adapted_planner_critic
   log_memory_outputs: true
   log_adapter_outputs: true
-  log_dir: "./memory_logs"        # root directory for all logs
-  save_training_records: true     # write training_records.jsonl
+  log_dir: "./memory_logs"
+  save_training_records: true
 ```
-
-`log_dir` defaults to `"./memory_logs"` when not specified.
-
-### Evaluator integration
-
-`MemoryExperimentLogger` is created once per eval-set and used at the end of each episode:
-
-```python
-# Once per eval-set:
-self.mem_logger = create_logger_from_config(self.config)
-
-# At episode end:
-if self.mem_logger is not None and self.mem_logger.enabled:
-    ep_record = MemoryExperimentLogger.build_episode_log(
-        episode_id=...,
-        env_name="alfred",
-        task_instruction=user_instruction,
-        mode=...,
-        planner=self.planner,
-        critic=dual_critic,
-        episode_info=episode_info,
-        metrics=self.metrics,
-        metadata={...},
-    )
-    self.mem_logger.log_episode(ep_record)
-    self.mem_logger.append_training_record(ep_record)
-```
-
-`build_episode_log` degrades gracefully: every field falls back to `""` / `[]` / `None` when the corresponding planner/critic attribute is absent.
-
-### MemoryEpisodeLog fields
-
-| Field | Source |
-|---|---|
-| `planner_memory_prompt` | `planner.last_memory_prompt` |
-| `adapted_planner_context` | `planner.last_adapted_memory_prompt` |
-| `raw_memory_context` | `planner.last_memory_context.to_text()` |
-| `foresight_plan` | `planner.last_adapted_memory_output.foresight_plan` |
-| `feasibility_criteria` | `planner.last_adapted_memory_output.feasibility_criteria` |
-| `fallback_strategy` | `planner.last_adapted_memory_output.fallback_strategy` |
-| `critic_memory_prompt` | `critic.vlm.last_adapted_memory_prompt` |
-| `critic_events` | `critic._episode_critic_records` |
-| `planner_actions` | `planner.episode_act_feedback` (decoded) |
-
-### Test
 
 ```bash
+pytest tests/memory_adapter/test_memory_metrics.py -v
 pytest tests/memory_adapter/test_memory_logging.py -v
 ```

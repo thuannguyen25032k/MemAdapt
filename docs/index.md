@@ -6,11 +6,9 @@
 | [architecture.md](architecture.md) | System components and information flow |
 | [memory_system.md](memory_system.md) | Four-type memory subsystem |
 | [memory_adapter.md](memory_adapter.md) | Memory adapter model and output format |
-| [dataset_pipeline.md](dataset_pipeline.md) | Hindsight dataset construction |
-| [sft_training.md](sft_training.md) | Stage 1 — hindsight-supervised SFT with QLoRA |
+| [dataset_pipeline.md](dataset_pipeline.md) | MemGuide dataset construction |
+| [sft_training.md](sft_training.md) | Stage 1 — SFT with LoRA |
 | [grpo_training.md](grpo_training.md) | Stage 2 — GRPO refinement |
-| [evaluation.md](evaluation.md) | Benchmark evaluation harness |
-| [experiments.md](experiments.md) | Ablation and multi-seed orchestration |
 | [reproducibility.md](reproducibility.md) | Hardware, seeds, expected results |
 | [troubleshooting.md](troubleshooting.md) | Common issues and solutions |
 | [developer_guide.md](developer_guide.md) | Adding new modules, running tests |

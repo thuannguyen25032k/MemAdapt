@@ -9,6 +9,8 @@ embodiedbench/
 │   ├── temporal_memory.py       # Time-ordered episode event log
 │   ├── episodic_memory.py       # Cross-episode task-attempt records
 │   ├── semantic_memory.py       # Persistent domain facts and rules
+│   ├── trajectory.py            # TrajectoryRecorder (per-episode capture)
+│   ├── trajectory_schemas.py    # TrajectoryStep / TrajectoryEpisode
 │   └── manager.py               # Unified retrieval interface (MemoryManager)
 │
 ├── memory_adapter/              # Adapter runtime
@@ -18,11 +20,6 @@ embodiedbench/
 │   ├── parsing.py               # Structured XML output parser
 │   ├── schemas.py               # MemoryAdapterInput / MemoryAdapterOutput
 │   └── utils.py                 # Shared adapter utilities
-│
-├── memory/                      # Memory system + trajectory recorder
-│   ├── trajectory.py            # TrajectoryRecorder (per-episode capture)
-│   ├── trajectory_schemas.py    # TrajectoryStep / TrajectoryEpisode
-│   └── ...                      # spatial / temporal / episodic / semantic memory
 │
 ├── memory_adapter_training/     # Stage 1: SFT pipeline
 │   ├── trainer.py               # HuggingFace Trainer wrapper
@@ -46,10 +43,10 @@ embodiedbench/
 │   ├── runner.py                # run_experiment() — top-level evaluation entry point
 │   ├── metrics.py               # Success rate, SPL, stale-misuse rate, ...
 │   ├── reporting.py             # JSON / CSV result writers
-│   └── aggregators.py           # Multi-episode result aggregation
-    ├── launcher.py              # Single / batch / suite runners
-    ├── sweeps.py                # Grid and seed sweeps
-    └── utils.py                 # Git hash, JSON helpers
+│   ├── aggregators.py           # Multi-episode result aggregation
+│   ├── launcher.py              # Single / batch / suite runners
+│   ├── sweeps.py                # Grid and seed sweeps
+│   └── utils.py                 # Git hash, JSON helpers
 ```
 
 ## Information Flow
@@ -84,28 +81,5 @@ Memory Manager ──(retrieve)──► Memory Bundle
 
 ## Reward Components (GRPO)
 
-The composite reward is:
-
-$$
-R = w_{\text{success}} \cdot S
-  + w_{\text{progress}} \cdot P
-  - w_{\text{replan}} \cdot R_p
-  - w_{\text{invalid}} \cdot I
-  - w_{\text{stale}} \cdot M_s
-  - w_{\text{halluc}} \cdot H
-  + w_{\text{feasib}} \cdot F
-  + w_{\text{foresight}} \cdot Q
-  + w_{\text{xml}} \cdot X
-$$
-
-| Component | Symbol | Default Weight | Sign |
-|---|---|---|---|
-| Task success | $S$ | 1.0 | + |
-| Task progress | $P$ | 0.5 | + |
-| Replanning penalty | $R_p$ | 0.2 | − |
-| Invalid action penalty | $I$ | 0.3 | − |
-| Stale-memory misuse penalty | $M_s$ | 0.4 | − |
-| Hallucination penalty | $H$ | 0.5 | − |
-| Feasibility quality | $F$ | 0.3 | + |
-| Foresight quality | $Q$ | 0.2 | + |
-| XML structure validity | $X$ | 0.5 | + |
+See [grpo_training.md](grpo_training.md) for the full reward formula, component
+definitions, default weights, and the GRPO config YAML.

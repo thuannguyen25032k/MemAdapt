@@ -16,18 +16,18 @@ sizes.
 python embodiedbench/scripts/train_memory_adapter_grpo.py \
     --config embodiedbench/configs/memory_adapter_rl/qwen_grpo.yaml \
     --sft_checkpoint outputs/memory_adapter_training/qwen3_14b/checkpoint-final \
-    --output_dir     outputs/memory_adapter_rl/grpo_qwen7b
+    --output_dir     outputs/memory_adapter_rl/grpo_qwen3_14b
 ```
 
 ## Config Reference
 
 ```yaml
 # embodiedbench/configs/memory_adapter_rl/qwen_grpo.yaml
-run_name: memadapt_grpo_qwen7b
+run_name: memadapt_grpo_qwen3_14b
 algorithm: grpo
 seed: 42
 
-model_name_or_path: "Qwen/Qwen2.5-7B-Instruct"
+model_name_or_path: "embodiedbench/memory_adapter/models/Qwen3-14B"
 torch_dtype: bfloat16
 load_in_4bit: false
 
@@ -148,12 +148,12 @@ python embodiedbench/scripts/train_memory_adapter_grpo.py \
 | Config | GPU | VRAM | Time |
 |---|---|---|---|
 | `qwen_grpo.yaml` | A100 80 GB | ~60 GB | ~6 h |
-| `debug_grpo_tiny.yaml` | CPU | — | ~3 min |
+| `debug_grpo_tiny.yaml` | CPU/1 GPU | minimal | ~3 min |
 
 ## Checkpoint Layout
 
 ```
-outputs/memory_adapter_rl/grpo_qwen7b/
+outputs/memory_adapter_rl/grpo_qwen3_14b/
 ├── checkpoint-step-200/
 ├── checkpoint-step-400/
 ├── checkpoint-final/       ← use this for evaluation

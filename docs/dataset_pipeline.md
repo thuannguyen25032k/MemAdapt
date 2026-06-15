@@ -2,9 +2,11 @@
 
 ## Overview
 
-The memory-adapter training dataset is built from recorded benchmark episodes using
-hindsight labelling — we know which memory entries turned out to be stale because we
-can compare the agent's beliefs against the ground-truth state at each step.
+The MemGuide dataset is built from recorded benchmark episodes (EB-ALFRED and
+EB-Habitat).  A frontier LLM synthesizes structured guidance targets
+(`FORESIGHT_PLAN`, `FEASIBILITY_CRITERIA`, `FALLBACK_STRATEGY`) for each episode;
+behavioral consensus filtering then discards any target that degrades closed-loop
+execution relative to baseline.  The surviving targets form the SFT training set.
 
 ## Pipeline Steps
 
@@ -77,7 +79,7 @@ populated for DPO/ORPO training:
 
 ## Data Statistics (expected)
 
-| Split | ALFRED | Habitat | Manipulation | Navigation |
-|---|---|---|---|---|
-| Train | ~8 000 | ~4 000 | ~2 000 | ~2 000 |
-| Val | ~900 | ~450 | ~220 | ~220 |
+| Split | ALFRED | Habitat |
+|---|---|---|
+| Train | ~8 000 | ~4 000 |
+| Val | ~900 | ~450 |

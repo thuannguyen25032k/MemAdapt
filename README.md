@@ -139,15 +139,13 @@ Recorded Benchmark Episodes
 (EB-ALFRED + EB-Habitat)
         │
         ▼
-Frontier LLM (38B) synthesizes structured
+Frontier LLM synthesizes structured
 guidance targets for each episode
 (FORESIGHT_PLAN / FEASIBILITY_CRITERIA /
  FALLBACK_STRATEGY)
         │
         ▼
 Behavioral Consensus Filtering
-  discards targets that degrade
-  closed-loop execution vs. baseline
         │
         ▼
   MemGuide Dataset
@@ -158,10 +156,10 @@ Behavioral Consensus Filtering
 ┌───────────────────────────────────────────────────────────┐
 │  Stage 1 — Supervised Fine-Tuning (SFT)                   │
 │                                                           │
-│  • Base model: Qwen3-14B + QLoRA (4-bit NF4 + LoRA)      │
+│  • Base model: Qwen3-14B + LoRA                           │
 │  • Learns to produce structured XML guidance              │
 │    (foresight plan, feasibility criteria,                 │
-│     fallback strategy) from task + memories.             │
+│     fallback strategy) from task + memories.              │
 │  • Loss computed over assistant responses only;           │
 │    same prompt format used at training and inference.     │
 └──────────────────────────┬────────────────────────────────┘
@@ -189,14 +187,10 @@ Behavioral Consensus Filtering
 ```
 
 **Stage 1 — Supervised Fine-Tuning (SFT)** distills the filtered MemGuide targets into
-the compact Qwen3-14B adapter via QLoRA. The adapter learns to generate the three-part
-structured guidance (foresight plan, feasibility criteria, fallback strategy) conditioned
-on a task instruction and retrieved memories, using the same prompt format at both
-training and inference time.
+the compact Qwen3-14B adapter via LoRA. The adapter learns to generate the three-part
+structured guidance (foresight plan, feasibility criteria, fallback strategy) conditioned on a task instruction and retrieved memories, using the same prompt format at both training and inference time.
 
-**Stage 2 — GRPO Refinement** sharpens closed-loop performance. Rollouts are scored
-with a composite reward covering task success/progress, structural format validity, and
-per-section content quality, with penalties for excessive replanning and invalid actions.
+**Stage 2 — GRPO Refinement (Not implemented)** sharpens closed-loop performance. Rollouts are scored with a composite reward covering task success/progress, structural format validity, and per-section content quality, with penalties for excessive replanning and invalid actions.
 This stage trains the adapter — not the planner — to produce guidance that makes the
 frozen downstream components more reliable.
 
@@ -222,12 +216,6 @@ cd MemAdapt
 conda env create -f conda_envs/environment.yaml
 conda activate embench
 pip install -e .
-```
-
-For navigation / manipulation only:
-```bash
-conda env create -f conda_envs/environment_eb-nav.yaml   # navigation
-conda env create -f conda_envs/environment_eb-man.yaml   # manipulation
 ```
 
 ### Step 3 — Install benchmark data
@@ -292,69 +280,30 @@ python -m embodiedbench.memory_adapter_training.train_sft \
                  memory_adapter_dataset/habitat_memory_logs/sft_filtered/sft_targets_filtered.jsonl \
     --output_dir outputs/memory_adapter_training/qwen3_14b
 ```
+
 ---
 
-## Deployment
+## Merging the Checkpoint
 
-After training, serve the fine-tuned adapter as an OpenAI-compatible API using
-[lmdeploy](https://github.com/InternLM/lmdeploy).  The `MemoryAdapter` will call the
-server instead of loading a model locally.
-
-### Step 1 — Serve the adapter with lmdeploy
+After SFT training the output directory contains a **LoRA adapter** (delta weights
+only), not a full standalone model. Before running benchmark evaluation, merge the adapter back into the base model:
 
 ```bash
-conda activate lmdeploy
-
-lmdeploy serve api_server \
-    embodiedbench/memory_adapter/models/Qwen3-14B \
-    --adapters qwen3-adapter=outputs/memory_adapter_training/qwen3_14b/checkpoint-final \
-    --model-name qwen3-14b-adapter \
-    --server-port 8000 \
-    --tp 1
+python embodiedbench/scripts/merge_adapter.py \
+    --base_model  embodiedbench/memory_adapter/models/Qwen3-14B \
+    --adapter_dir outputs/memory_adapter_training/qwen3_14b/checkpoint-final \
+    --output_dir  outputs/merged/qwen3_14b_merged
 ```
 
-Replace `checkpoint-final` with any specific checkpoint directory (e.g. `checkpoint-100`).
-The base model path must match the one used during training.
-
-### Step 2 — Point `MemoryAdapter` at the server
-
-In `embodiedbench/configs/config.yaml` (or your per-run config override):
-
-```yaml
-memory_adapter:
-  enabled: true
-  model_name_or_path: ""       # leave empty — model is not loaded locally
-  api_model: "qwen3-14b-adapter"
-  api_key: "EMPTY"
-  api_base_url: "http://localhost:8000/v1"
-```
-
-No other code changes are needed; the adapter will call `/v1/chat/completions`
-on the lmdeploy server automatically.
-
----
-
-## GRPO Refinement
-
-See [docs/grpo_training.md](docs/grpo_training.md) for full details.
-
-```bash
-python embodiedbench/scripts/train_memory_adapter_grpo.py \
-    --config embodiedbench/configs/memory_adapter_rl/qwen_grpo.yaml \
-    --sft_checkpoint outputs/memory_adapter_training/qwen3_14b/checkpoint-final \
-    --output_dir     outputs/memory_adapter_rl/grpo_qwen7b
-```
-
----
+The merged model is saved as a plain HuggingFace checkpoint — no PEFT dependency
+needed at inference time.
 
 ## Benchmark Evaluation
-
-See [docs/evaluation.md](docs/evaluation.md) for full details.
 
 ```bash
 python embodiedbench/main.py \
     env=eb-alf \
-    adapter_checkpoint=outputs/memory_adapter_rl/grpo_qwen7b/checkpoint-final
+    adapter_checkpoint=outputs/merged/qwen3_14b_merged
 ```
 
 ---
@@ -378,9 +327,6 @@ Set the `mode` field in `embodiedbench/configs/config.yaml` under `memory_experi
 
 See [docs/reproducibility.md](docs/reproducibility.md) for full details.
 
-- All experiments use fixed random seeds (passed to PyTorch, NumPy, and Python `random`)
-- Config hashes are recorded in every `metadata.json`
-- Git commit hash is embedded in every run
 - Expected hardware: 1× A100 80 GB (training) / any CPU (evaluation stub)
 - Expected runtime: SFT ~4 h, GRPO ~6 h on A100
 
@@ -403,7 +349,6 @@ MemAdapt/
 │   ├── evaluator/               # Original EmbodiedBench evaluators
 │   └── main.py                  # Top-level benchmark runner
 ├── docs/                        # Full documentation
-├── tests/                       # Pytest test suite (812 tests)
 ├── conda_envs/                  # Conda environment specs
 ├── Docker/                      # Docker build files
 ├── setup.py
