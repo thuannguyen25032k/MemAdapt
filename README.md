@@ -14,46 +14,55 @@
 
 ## Overview
 
-Embodied agents operating over long horizons accumulate memories — spatial maps, object
-states, episodic observations, and semantic associations — that become **stale** as the
-environment evolves.  Retrieved memories can be outdated, contradictory, incomplete, or
-outright misleading after even modest environment change.  Naïvely injecting such
-memories into a VLM planner actively *hurts* task performance: the planner hallucinates
-object states, commits to infeasible sub-tasks, and fails checks raised by the critic.
-
-**MemAdapt** addresses this with a trained, *plug-and-play* **Memory Adapter** that
-intercepts retrieved memories *before* they reach the planner or critic, and transforms
-them into **uncertainty-aware reasoning contexts** tailored to both decision-making
-roles.  The planner and critic remain frozen and unmodified; the adapter is the sole
-trainable component.
-
-Concretely, the Memory Adapter:
-
-1. **Assesses memory reliability** — reasons about which retrieved entries are likely
-   stale, contradictory, or incomplete given the current observation.
-2. **Produces uncertainty-aware summaries** — rewrites retrieved memories into hedged,
-   evidence-grounded context that prevents stale-memory hallucination.
-3. **Generates foresight plans** — provides the VLM planner with a memory-grounded
-   step sequence, reducing replanning under uncertainty.
-4. **Derives feasibility criteria** — supplies the VLM critic with concrete, verifiable
-   pass/fail conditions grounded in current memory reliability.
-
-The adapter is compatible with **all major memory modalities** — spatial, temporal,
-episodic, and semantic — and integrates with any existing VLM planner or critic without
-requiring retraining of either.
+Memory-augmented Vision-Language Model (VLM) planning is a promising approach for
+long-horizon embodied tasks under partial observability. Existing systems typically
+retrieve task-relevant memories and inject them directly into the planner, but raw
+memories are often verbose, heterogeneous, and unstructured, making them difficult for
+the planner to use. We propose **MemAdapter**, a plug-and-play Memory Adapter that,
+conditioned on the task instruction, converts retrieved memories into structured,
+task-level guidance comprising a foresight plan for global task sequencing, feasibility
+criteria for critic-based action verification, and a fallback strategy for failure
+recovery. Producing such guidance requires specialized reasoning that a compact large
+language model (LLM) cannot reliably perform without dedicated training. We therefore
+train MemAdapter without manual annotation: we synthesize expert guidance targets with
+a frontier LLM, retain only those that do not degrade closed-loop execution via
+behavioral consensus filtering, and distill the filtered data into a compact 14B
+adapter through supervised fine-tuning. We evaluate MemAdapter on 400 tasks from the
+EB-ALFRED and EB-Habitat environments of EmbodiedBench. With a frozen
+Qwen2.5-VL-72B-Instruct planner, our MemAdapter-enabled framework attains a 79.50% average
+success rate, improving over the strongest memory-augmented framework under the same
+planner (RoboMemory) by 12.75 points; it further surpasses the strongest standalone VLM
+agent (Claude-3.5-Sonnet) by 8.75 points despite building on a far weaker standalone
+planner, indicating that memory adaptation can offset raw differences in planner
+capability. These results show that effective memory-augmented embodied planning
+requires not only retrieving memory but also adapting it into explicit, verifiable,
+and recovery-aware planning guidance.
 
 ---
 
 ## Key Contributions
 
-| # | Contribution |
-|---|---|
-| 1 | **Stale-memory reasoning** — an explicit reliability-assessment stage that identifies stale, contradictory, and incomplete entries *before* they influence planning or critiquing |
-| 2 | **Uncertainty-aware memory adaptation** — transforms raw retrieved memories into hedged, evidence-grounded summaries that prevent stale-memory hallucination in downstream VLMs |
-| 3 | **Planner–critic dual guidance** — a single adapter pass simultaneously grounds the VLM planner's foresight *and* the VLM critic's feasibility checks, ensuring internal consistency across both roles |
-| 4 | **Plug-and-play modularity** — decoupled from the planner, critic, and memory system; no retraining of any other component is required |
-| 5 | **Two-stage adapter training** — hindsight-supervised SFT teaches memory adaptation from expert trajectories; GRPO refinement improves robustness to stale memories, reduces hallucination, and tightens feasibility reasoning |
-| 6 | **Cross-environment generalization** — validated across four diverse embodied benchmarks (ALFRED, Habitat, manipulation, navigation) covering all major memory modalities |
+- **MemAdapter** — We propose MemAdapter, a plug-and-play module between memory
+  retrieval and the VLM planner that converts heterogeneous retrieved memories
+  (spatial, temporal, episodic, and semantic) into structured planning guidance
+  without modifying either component.
+- **Structured guidance format** — We design a structured guidance format with three
+  components, each targeting a distinct stage of closed-loop planning: a *foresight
+  plan* (initial task hypothesis), *feasibility criteria* (per-action preconditions for
+  the critic), and a *fallback strategy* (spatially grounded recovery actions).
+- **Automated fine-tuning pipeline** — We develop an automated fine-tuning pipeline
+  that needs no manual annotation, in which a frontier LLM synthesizes expert
+  guidance targets, behavioral consensus filtering discards targets that degrade
+  closed-loop execution, and supervised fine-tuning distills the rest into MemAdapter.
+- **MemGuide dataset** — We release MemGuide, a memory-to-guidance dataset pairing
+  task instructions and retrieved memories with their structured planning guidance, to
+  support future research on memory-adapted embodied planning.
+- **Evaluation on EmbodiedBench** — We evaluate our framework on EmbodiedBench, a
+  standardized benchmark for vision-driven embodied agents, attaining a 79.50% average
+  success rate. This exceeds the strongest same-planner memory-augmented framework
+  (RoboMemory) by 12.75 points and the strongest standalone VLM agent
+  (Claude-3.5-Sonnet) by 8.75 points, with especially pronounced gains on
+  commonsense-reasoning tasks.
 
 ---
 
