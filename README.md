@@ -68,10 +68,10 @@ and recovery-aware planning guidance.
 
 ## Architecture
 
-MemAdapt inserts a **Memory Adapter** between the memory retrieval system and the
-decision-making layer.  The planner and critic remain frozen and unmodified; the adapter
-is the sole trainable component that mediates what memory-grounded information they
-receive.
+MemAdapter sits between the memory retrieval system and the VLM planner/critic.
+Conditioned on the task instruction and retrieved memories, it converts heterogeneous
+memory into structured, task-level planning guidance. Both the planner and critic remain
+frozen; MemAdapter is the sole trained component.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -83,76 +83,87 @@ receive.
 │                           episodic / semantic)                     │
 │                                       │                            │
 │                               Retrieved Memories                   │
-│                          (may be stale, incomplete,                │
-│                           contradictory, or misleading)            │
+│                          (verbose, heterogeneous,                  │
+│                           and unstructured)                        │
 │                                       │                            │
+│         Task Instruction ─────────────┤                            │
 │                                       ▼                            │
 │                          ┌────────────────────────┐               │
-│                          │     Memory Adapter     │               │
-│                          │       (MemAdapt)       │               │
+│                          │      MemAdapter        │               │
+│                          │  (Qwen3-14B + LoRA)    │               │
 │                          │                        │               │
-│                          │  • staleness reasoning │               │
-│                          │  • uncertainty hedging │               │
-│                          │  • foresight planning  │               │
-│                          │  • feasibility grounding│              │
-│                          └───────────┬────────────┘               │
-│                                      │                             │
-│                     memory-grounded reasoning context              │
-│                                      │                             │
-│                    ┌─────────────────┴──────────────────┐         │
-│                    ▼                                     ▼         │
-│           ┌─────────────────┐                 ┌──────────────────┐│
-│           │   VLM Planner   │                 │   VLM Critic     ││
-│           │  (frozen / any) │                 │  (frozen / any)  ││
-│           │                 │                 │                  ││
-│           │  foresight plan │                 │ feasibility check││
-│           │  fallback rules │                 │                  ││
-│           └────────┬────────┘                 └────────┬─────────┘│
-│                    └──────────────┬────────────────────┘          │
-│                                   ▼                               │
-│                                Action                             │
+│                          │  converts memories to  │               │
+│                          │  structured guidance:  │               │
+│                          │  • foresight plan      │               │
+│                          │  • feasibility criteria│               │
+│                          │  • fallback strategy   │               │
+│                          └────────────┬───────────┘               │
+│                                       │                            │
+│              ┌────────────────────────┴──────────────────┐        │
+│              │                                           │         │
+│   foresight plan + fallback strategy          feasibility criteria │
+│              │                                           │         │
+│              ▼                                           ▼         │
+│     ┌─────────────────┐                       ┌──────────────────┐│
+│     │   VLM Planner   │                       │   VLM Critic     ││
+│     │   (frozen)      │                       │   (frozen)       ││
+│     └────────┬────────┘                       └────────┬─────────┘│
+│              └──────────────────┬─────────────────────┘           │
+│                                 ▼                                  │
+│                              Action                                │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 **Key design properties:**
 
-- The adapter is **plug-and-play** — it wraps any existing memory system and VLM
-  backbone without modifying either.
-- The adapter **reasons about memory reliability** before producing any output,
-  preventing stale or contradictory entries from propagating unchecked into planning.
-- A single adapter pass **simultaneously guides** the planner (foresight) and the critic
-  (feasibility), ensuring internal consistency across both decision-making roles.
-- The adapter is compatible with **all major memory modalities**: spatial, temporal,
-  episodic, and semantic.
+- **Plug-and-play** — MemAdapter wraps any existing memory system and VLM backbone
+  without modifying either component.
+- **Task-conditioned guidance** — the adapter is conditioned on the task instruction,
+  producing guidance that is relevant to the current goal rather than a generic memory
+  summary.
+- **Structured three-part output** — a single adapter pass produces a *foresight plan*
+  and *fallback strategy* for the planner, and *feasibility criteria* for the critic,
+  ensuring internal consistency across both decision-making roles.
+- **Modality-agnostic** — compatible with all four memory modalities: spatial,
+  temporal, episodic, and semantic.
 
 ---
 
 ## Training Pipeline
 
-The Memory Adapter is the **only trained component** in the system.  Training proceeds
-in two stages, both targeting memory adaptation quality rather than general planning
-ability.
+MemAdapter is the **only trained component** in the system. Training requires no manual
+annotation and proceeds in two stages.
 
 ```
-Benchmark Episodes  ──►  Hindsight Annotation
-(with environment           (stale vs. reliable
- change events)              memory labels)
+Recorded Benchmark Episodes
+(EB-ALFRED + EB-Habitat)
         │
         ▼
-  Memory Dataset
-  (retrieved memories +
-   ground-truth reliability
-   + task outcomes)
+Frontier LLM (38B) synthesizes structured
+guidance targets for each episode
+(FORESIGHT_PLAN / FEASIBILITY_CRITERIA /
+ FALLBACK_STRATEGY)
+        │
+        ▼
+Behavioral Consensus Filtering
+  discards targets that degrade
+  closed-loop execution vs. baseline
+        │
+        ▼
+  MemGuide Dataset
+  (task instruction + retrieved memories
+   + filtered guidance targets)
         │
         ▼
 ┌───────────────────────────────────────────────────────────┐
-│  Stage 1 — Hindsight-Supervised SFT                       │
+│  Stage 1 — Supervised Fine-Tuning (SFT)                   │
 │                                                           │
-│  • Teacher targets: expert memory reasoning showing       │
-│    correct staleness assessment, uncertainty hedging,     │
-│    foresight plans, and feasibility criteria.             │
-│  • The adapter learns to transform unreliable retrieved   │
-│    memories into well-grounded reasoning contexts.        │
+│  • Base model: Qwen3-14B + QLoRA (4-bit NF4 + LoRA)      │
+│  • Learns to produce structured XML guidance              │
+│    (foresight plan, feasibility criteria,                 │
+│     fallback strategy) from task + memories.             │
+│  • Loss computed over assistant responses only;           │
+│    same prompt format used at training and inference.     │
 └──────────────────────────┬────────────────────────────────┘
                            │
                            ▼
@@ -162,34 +173,32 @@ Benchmark Episodes  ──►  Hindsight Annotation
 ┌───────────────────────────────────────────────────────────┐
 │  Stage 2 — GRPO Refinement                                │
 │                                                           │
-│  • Optimises against task-execution feedback.             │
+│  • Optimises against closed-loop task-execution feedback. │
 │  • Rewards: task success/progress, output format          │
 │    validity, per-section quality (foresight, feasibility, │
-│    fallback); penalises replanning, invalid actions,      │
-│    and response repetition.                               │
+│    fallback); penalises replanning and invalid actions.   │
 │  • Planner and critic remain frozen throughout.           │
 └──────────────────────────┬────────────────────────────────┘
                            │
                            ▼
-                  MemAdapt (final adapter)
+                  MemAdapter (final)
                            │
                            ▼
               Benchmark Evaluation
-              (eb_alfred / eb_habitat /
-               eb_manipulation / eb_nav)
+              (EB-ALFRED / EB-Habitat)
 ```
 
-**Stage 1 — Hindsight-Supervised SFT** teaches the adapter *what good memory reasoning
-looks like*: given retrieved memories and a current observation, produce an
-uncertainty-aware summary that correctly identifies stale entries and safely grounds
-both the planner and the critic.
+**Stage 1 — Supervised Fine-Tuning (SFT)** distills the filtered MemGuide targets into
+the compact Qwen3-14B adapter via QLoRA. The adapter learns to generate the three-part
+structured guidance (foresight plan, feasibility criteria, fallback strategy) conditioned
+on a task instruction and retrieved memories, using the same prompt format at both
+training and inference time.
 
-**Stage 2 — GRPO Refinement** sharpens robustness under distribution shift.  Rollouts
-are scored with a composite reward covering task success/progress, structural format
-validity, and per-section content quality (foresight, feasibility, fallback), with
-penalties for excessive replanning, invalid actions, and repetition.  This stage does
-not train a planner — it trains the adapter to produce reasoning contexts that make the
-frozen planner and critic more reliable under changing environments.
+**Stage 2 — GRPO Refinement** sharpens closed-loop performance. Rollouts are scored
+with a composite reward covering task success/progress, structural format validity, and
+per-section content quality, with penalties for excessive replanning and invalid actions.
+This stage trains the adapter — not the planner — to produce guidance that makes the
+frozen downstream components more reliable.
 
 ---
 
