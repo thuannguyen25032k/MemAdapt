@@ -1,4 +1,4 @@
-# MemAdapt: Memory Adapter for Stale-Memory Reasoning in Embodied Agents
+# MemAdapter: Structuring Retrieved Memories for VLM-Based Embodied Planning
 
 <!-- <p align="center">
   <img src="docs/images/framework.png" width="720" alt="MemAdapt Framework"/>
