@@ -358,6 +358,11 @@ MemAdapt/
 
 ---
 
+## Acknowledgement
+This repo is based on awesome embodied benchmark and simulations [EmbodiedBench](https://github.com/EmbodiedBench/EmbodiedBench) [ai2thor](https://github.com/allenai/ai2thor), [Habitat](https://github.com/facebookresearch/habitat-lab)
+
+---
+
 ## Citation
 
 If you use MemAdapt in your research, please cite:
@@ -379,4 +384,3 @@ If you use MemAdapt in your research, please cite:
 This project is released under the [MIT License](LICENSE).
 
 The EmbodiedBench benchmark environments are subject to their own licenses;
-see [Original_README.md](Original_README.md) for details.
