@@ -317,9 +317,8 @@ Set the `mode` field in `embodiedbench/configs/config.yaml` under `memory_experi
 | `baseline` | No memory, no adapter — pure planner + critic |
 | `raw_memory` | Raw retrieved memory injected directly, no adaptation |
 | `adapted_memory` | **Full MemAdapt system** — adapter injected into both planner and critic |
-| `adapted_memory_planner_only` | Adapter injected into planner only |
-| `adapted_memory_critic_only` | Adapter injected into critic only |
-| `adapted_memory_planner_critic` | Explicit dual injection (equivalent to `adapted_memory`) |
+| `adapted_planner` | Adapter injected into planner only |
+| `adapted_planner_critic` | Explicit dual injection (equivalent to `adapted_memory`) |
 
 ---
 
@@ -332,7 +331,7 @@ See [docs/reproducibility.md](docs/reproducibility.md) for full details.
 
 ---
 
-## Project Structure
+<!-- ## Project Structure
 
 ```
 MemAdapt/
@@ -355,7 +354,7 @@ MemAdapt/
 ├── pyproject.toml
 ├── requirements.txt
 └── README.md
-```
+``` -->
 
 ---
 
