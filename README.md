@@ -64,7 +64,7 @@ and recovery-aware planning guidance.
   (Claude-3.5-Sonnet) by 8.75 points, with especially pronounced gains on
   commonsense-reasoning tasks.
 
----
+<!-- ---
 
 ## Architecture
 
@@ -112,7 +112,7 @@ frozen; MemAdapter is the sole trained component.
 │                                 ▼                                  │
 │                              Action                                │
 └─────────────────────────────────────────────────────────────────────┘
-```
+``` -->
 
 **Key design properties:**
 
@@ -134,7 +134,7 @@ frozen; MemAdapter is the sole trained component.
 MemAdapter is the **only trained component** in the system. Training requires no manual
 annotation and proceeds in two stages.
 
-```
+<!-- ```
 Recorded Benchmark Episodes
 (EB-ALFRED + EB-Habitat)
         │
@@ -184,7 +184,7 @@ Behavioral Consensus Filtering
                            ▼
               Benchmark Evaluation
               (EB-ALFRED / EB-Habitat)
-```
+``` -->
 
 **Stage 1 — Supervised Fine-Tuning (SFT)** distills the filtered MemGuide targets into
 the compact Qwen3-14B adapter via LoRA. The adapter learns to generate the three-part
