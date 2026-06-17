@@ -241,7 +241,7 @@ pytest tests/ -q --tb=no
 from embodiedbench.memory_adapter import MemoryAdapter, MemoryAdapterInput
 from embodiedbench.memory_adapter.config import MemoryAdapterConfig
 
-cfg = MemoryAdapterConfig(model_name_or_path="Qwen/Qwen2.5-7B-Instruct", load_in_4bit=True)
+cfg = MemoryAdapterConfig(model_name_or_path="Qwen/Qwen3-14B")
 adapter = MemoryAdapter(cfg)
 
 adapter_input = MemoryAdapterInput(
@@ -367,7 +367,7 @@ If you use MemAdapt in your research, please cite:
 @article{nguyen2026memadapt,
   title   = {MemAdapt: A Plug-and-Play Memory Adapter for Stale-Memory Reasoning
              in Embodied Agents},
-  author  = {Nguyen, Thuan},
+  author  = {Nguyen, Minh Thuan and Le, Bao Long},
   year    = {2026},
   note    = {Manuscript in preparation}
 }

@@ -1,6 +1,7 @@
 import ai2thor.controller
 import gym
 import numpy as np
+import subprocess
 import time
 from PIL import Image
 import json
@@ -507,6 +508,28 @@ class EBNavigationEnv(gym.Env):
             writer.write(frame)
 
         writer.release()
+
+        # Re-encode to H.264 so the video plays on macOS/iOS/browsers.
+        # OpenCV on Linux writes MPEG-4 Part 2 (mp4v) which Apple devices don't support.
+        tmp_path = video_path + ".tmp.mp4"
+        os.rename(video_path, tmp_path)
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-i", tmp_path,
+                    "-c:v", "libx264", "-crf", "23", "-preset", "fast",
+                    "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+                    video_path,
+                ],
+                check=True,
+                capture_output=True,
+            )
+        except Exception as e:
+            logger.warning(f"ffmpeg H.264 re-encode failed ({e}); keeping original mp4v file.")
+            os.rename(tmp_path, video_path)
+        else:
+            os.remove(tmp_path)
+
         logger.info(f"Episode {episode_idx} video saved to {video_path}")
         return video_path
 
