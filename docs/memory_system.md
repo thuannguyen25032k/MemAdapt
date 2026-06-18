@@ -31,7 +31,7 @@ This document describes the memory architecture introduced in MemAdapt, covering
                     ▼                            ▼
            ┌─────────────────┐      ┌──────────────────────┐
            │   VLM Planner   │      │    Memory Adapter    │
-           │  (raw memory    │      │  (staleness reasoning│
+           │  (raw memory    │      │  (memory→guidance    │
            │   prefix)       │      │   + XML output)      │
            └─────────────────┘      └──────────┬───────────┘
                                                │
@@ -55,7 +55,7 @@ Tracks object locations, states, and spatial relations as a scene graph.
 - Detects **stale locations** when an object is moved.
 - Detects **conflicts** between relations.
 - Key method: `update_from_observation(observation, info, step_id, ...)`
-- Research focus: stale-memory reasoning under partial observability.
+- Tracks object locations under partial observability.
 
 ### 2. TemporalMemory (`memory/temporal_memory.py`)
 
@@ -284,10 +284,6 @@ memory_experiment:
   log_adapter_outputs: true
 ```
 
-```bash
-pytest tests/memory_adapter/test_memory_experiment_modes.py -v
-```
-
 ---
 
 ## Metrics & Logging
@@ -317,9 +313,4 @@ memory_experiment:
   log_adapter_outputs: true
   log_dir: "./memory_logs"
   save_training_records: true
-```
-
-```bash
-pytest tests/memory_adapter/test_memory_metrics.py -v
-pytest tests/memory_adapter/test_memory_logging.py -v
 ```

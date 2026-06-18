@@ -5,7 +5,9 @@
 Stage 1 of MemAdapt training fine-tunes **Qwen3-14B** on the filtered adapter-target
 dataset using LoRA. This teaches the model to
 produce well-formed XML adapter outputs (`FORESIGHT_PLAN`, `FEASIBILITY_CRITERIA`,
-`FALLBACK_STRATEGY`) before GRPO refinement in Stage 2.
+`FALLBACK_STRATEGY`). SFT is the only training stage used for the released model; the
+optional Stage 2 GRPO refinement is planned future work and is not yet implemented
+(see [grpo_training.md](grpo_training.md)).
 
 The training prompt is split into the **same** system + user chat messages used at
 inference (`build_adapter_messages` / `build_adapter_user_content`): the fixed

@@ -28,7 +28,7 @@ embodiedbench/
 │   ├── modeling.py              # Model + LoRA initialisation
 │   └── formatting.py            # Prompt/response formatting helpers
 │
-├── memory_adapter_rl/           # Stage 2: GRPO refinement
+├── memory_adapter_rl/           # Stage 2: GRPO refinement (planned, not yet implemented)
 │   ├── rewards.py               # Composite reward (format + 3-section quality)
 │   ├── grpo.py                  # GRPO rollout & advantage normalisation
 │   ├── trainer.py               # MemoryAdapterGRPOTrainer (TRL + CPU fallback)
@@ -41,7 +41,7 @@ embodiedbench/
 │
 ├── evaluation/                  # Benchmark evaluation
 │   ├── runner.py                # run_experiment() — top-level evaluation entry point
-│   ├── metrics.py               # Success rate, SPL, stale-misuse rate, ...
+│   ├── metrics.py               # Success rate, SPL, task progress, ...
 │   ├── reporting.py             # JSON / CSV result writers
 │   ├── aggregators.py           # Multi-episode result aggregation
 │   ├── launcher.py              # Single / batch / suite runners
@@ -81,5 +81,6 @@ Memory Manager ──(retrieve)──► Memory Bundle
 
 ## Reward Components (GRPO)
 
-See [grpo_training.md](grpo_training.md) for the full reward formula, component
-definitions, default weights, and the GRPO config YAML.
+> **Planned, not yet implemented.** The GRPO refinement stage is a design specification
+> only. See [grpo_training.md](grpo_training.md) for the full reward formula, component
+> definitions, default weights, and the GRPO config YAML.

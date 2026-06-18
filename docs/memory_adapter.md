@@ -60,10 +60,9 @@ from embodiedbench.memory_adapter import MemoryAdapter, MemoryAdapterInput
 from embodiedbench.memory_adapter.config import MemoryAdapterConfig
 
 cfg = MemoryAdapterConfig(
-    model_name_or_path="Qwen/Qwen2.5-7B-Instruct",
+    model_name_or_path="embodiedbench/memory_adapter/models/Qwen3-14B",
     max_new_tokens=2048,
     temperature=0.0,
-    load_in_4bit=True,
 )
 adapter = MemoryAdapter(cfg)
 
@@ -131,8 +130,7 @@ Instantiate from a dict or OmegaConf config:
 
 ```python
 cfg = MemoryAdapterConfig.from_mapping({
-    "model_name_or_path": "Qwen/Qwen2.5-7B-Instruct",
-    "load_in_4bit": True,
+    "model_name_or_path": "embodiedbench/memory_adapter/models/Qwen3-14B",
 })
 ```
 

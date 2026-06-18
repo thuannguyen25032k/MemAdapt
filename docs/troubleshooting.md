@@ -50,27 +50,17 @@ pip install wandb>=0.16.0
 
 ## Training Issues
 
-### CUDA OOM during GRPO training
+### CUDA OOM during SFT training
 
-Reduce the effective batch size:
+Reduce the effective batch size and keep gradient checkpointing on:
 ```yaml
 per_device_train_batch_size: 1
 gradient_accumulation_steps: 32
+gradient_checkpointing: true
 ```
 
-Or use the debug config to verify your setup:
-```bash
-python -m embodiedbench.memory_adapter_training.trainer \
-    --config embodiedbench/configs/memory_adapter_training/debug_tiny.yaml \
-    --output_dir /tmp/debug_sft
-```
-
-For GRPO OOM, use the debug GRPO config:
-```bash
-python embodiedbench/scripts/train_memory_adapter_grpo.py \
-    --config embodiedbench/configs/memory_adapter_rl/debug_grpo_tiny.yaml \
-    --output_dir /tmp/debug_grpo
-```
+> GRPO (Stage 2) is planned and not yet implemented; the
+> `embodiedbench/memory_adapter_rl/` configs are a forward-looking reference only.
 
 ### Loss is NaN from the first step
 
@@ -80,14 +70,15 @@ Check that `bnb_4bit_compute_dtype` is set to `"bfloat16"` (not `"float16"`) for
 
 ## Evaluation Issues
 
-### `FileNotFoundError: data/episodes/...`
+### `FileNotFoundError` for training records / logs
 
-Run episode recording first:
+Enable training-record logging when you run the benchmark:
 ```bash
 python embodiedbench/main.py \
-    --config embodiedbench/configs/eb-alf.yaml \
-    --record_memory \
-    --episodes_output_dir data/episodes/eb_alfred
+    env=eb-alf \
+    memory_experiment.mode=adapted_planner_critic \
+    memory_experiment.save_training_records=true \
+    memory_experiment.log_dir=./alfred_memory_logs
 ```
 
 ### ALFRED simulator not found
@@ -96,28 +87,6 @@ Run the install script:
 ```bash
 bash install.sh
 ```
-
----
-
-## Test Suite
-
-### Running all tests
-
-```bash
-conda activate embench
-pytest tests/ -q
-```
-
-### Running a specific module
-
-```bash
-pytest tests/memory_adapter_rl/ -v
-```
-
-### 8 skipped tests
-
-The 8 skipped tests require optional GPU-only dependencies (`bitsandbytes`, CUDA).
-They are skipped automatically on CPU-only machines — this is expected.
 
 ---
 

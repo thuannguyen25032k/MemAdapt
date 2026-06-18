@@ -1,5 +1,12 @@
 # GRPO Training
 
+> ⚠️ **Status: planned, not yet implemented.** This document is a **design
+> specification** for the Stage 2 reinforcement-learning refinement. The code
+> scaffolding lives under `embodiedbench/memory_adapter_rl/`, but it has **not** been
+> validated or used to produce any results in this repository. All released models and
+> reported numbers come from Stage 1 (SFT) only. Treat the commands and configs below as
+> a forward-looking reference.
+
 ## Overview
 
 Stage 2 fine-tunes the SFT checkpoint further using **Group Relative Policy Optimisation

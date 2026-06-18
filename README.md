@@ -7,7 +7,6 @@
 <p align="center">
   <a href="#installation"><img src="https://img.shields.io/badge/Python-3.9%2B-blue" /></a>
   <a href="#license"><img src="https://img.shields.io/badge/License-MIT-green" /></a>
-  <a href="docs/reproducibility.md"><img src="https://img.shields.io/badge/Reproducible-Yes-brightgreen" /></a>
 </p>
 
 --- -->
@@ -132,7 +131,8 @@ frozen; MemAdapter is the sole trained component.
 ## Training Pipeline
 
 MemAdapter is the **only trained component** in the system. Training requires no manual
-annotation and proceeds in two stages.
+annotation. The released model and all reported results come from **Stage 1 (SFT)**;
+**Stage 2 (GRPO) is planned future work and is not yet implemented**.
 
 <!-- ```
 Recorded Benchmark Episodes
@@ -190,11 +190,19 @@ Behavioral Consensus Filtering
 the compact Qwen3-14B adapter via LoRA. The adapter learns to generate the three-part
 structured guidance (foresight plan, feasibility criteria, fallback strategy) conditioned on a task instruction and retrieved memories, using the same prompt format at both training and inference time.
 
-**Stage 2 — GRPO Refinement (Not implemented)** sharpens closed-loop performance. Rollouts are scored with a composite reward covering task success/progress, structural format validity, and per-section content quality, with penalties for excessive replanning and invalid actions.
-This stage trains the adapter — not the planner — to produce guidance that makes the
-frozen downstream components more reliable.
+> **Stage 2 — GRPO Refinement (planned, not yet implemented).** A reinforcement-learning
+> stage that would further sharpen closed-loop performance by scoring rollouts with a
+> composite reward (task success/progress, format validity, per-section quality, with
+> penalties for excessive replanning and invalid actions). The code scaffolding lives in
+> `embodiedbench/memory_adapter_rl/`, but it has **not** been validated or used to produce
+> any results in this repository. See [docs/grpo_training.md](docs/grpo_training.md) for
+> the design specification.
+
+> the design specification.
 
 ---
+
+## Installation
 
 ### Prerequisites
 
@@ -228,7 +236,6 @@ bash install.sh
 
 ```bash
 python -c "from embodiedbench.memory_adapter import MemoryAdapter; print('OK')"
-pytest tests/ -q --tb=no
 ```
 
 ---
@@ -300,34 +307,34 @@ needed at inference time.
 
 ## Benchmark Evaluation
 
+Evaluation is driven by Hydra. Select the environment with `env=` and point the adapter
+at the merged checkpoint via `memory_adapter.model_name_or_path`:
+
 ```bash
 python embodiedbench/main.py \
     env=eb-alf \
-    adapter_checkpoint=outputs/merged/qwen3_14b_merged
+    memory_experiment.mode=adapted_planner_critic \
+    memory_adapter.model_name_or_path=outputs/merged/qwen3_14b_merged
 ```
+
+Use `env=eb-hab` for EB-Habitat. See **Ablation Studies** below for the available
+`memory_experiment.mode` values.
 
 ---
 
 ## Ablation Studies
 
-Set the `mode` field in `embodiedbench/configs/config.yaml` under `memory_experiment` to run different ablation conditions:
+Set the `mode` field in `embodiedbench/configs/config.yaml` under `memory_experiment`
+(or override it on the command line, e.g. `memory_experiment.mode=raw_planner`) to run
+different ablation conditions:
 
 | `mode` value | Description |
 |---|---|
-| `baseline` | No memory, no adapter — pure planner + critic |
-| `raw_memory` | Raw retrieved memory injected directly, no adaptation |
-| `adapted_memory` | **Full MemAdapt system** — adapter injected into both planner and critic |
-| `adapted_planner` | Adapter injected into planner only |
-| `adapted_planner_critic` | Explicit dual injection (equivalent to `adapted_memory`) |
-
----
-
-## Reproducibility
-
-See [docs/reproducibility.md](docs/reproducibility.md) for full details.
-
-- Expected hardware: 1× A100 80 GB (training) / any CPU (evaluation stub)
-- Expected runtime: SFT ~4 h, GRPO ~6 h on A100
+| `none` | No memory, no adapter — pure planner + critic baseline |
+| `raw_planner` | Raw retrieved memory injected into the planner only |
+| `raw_planner_critic` | Raw retrieved memory injected into planner + critic |
+| `adapted_planner` | MemAdapter guidance injected into the planner only |
+| `adapted_planner_critic` | **Full MemAdapter system** — guidance injected into planner + critic |
 
 ---
 
@@ -365,12 +372,11 @@ This repo is based on awesome embodied benchmark and simulations [EmbodiedBench]
 
 ## Citation
 
-If you use MemAdapt in your research, please cite:
+If you use MemAdapter in your research, please cite:
 
 ```bibtex
-@article{nguyen2026memadapt,
-  title   = {MemAdapt: A Plug-and-Play Memory Adapter for Stale-Memory Reasoning
-             in Embodied Agents},
+@article{nguyen2026memadapter,
+  title   = {MemAdapter: Structuring Retrieved Memories for VLM-Based Embodied Planning},
   author  = {Nguyen, Minh Thuan and Le, Bao Long},
   year    = {2026},
   note    = {Manuscript in preparation}

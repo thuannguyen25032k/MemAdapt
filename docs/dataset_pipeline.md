@@ -11,75 +11,118 @@ execution relative to baseline.  The surviving targets form the SFT training set
 ## Pipeline Steps
 
 ```
-1. Record episodes
+1. Record benchmark runs
+   (expert + novice planners;
+    baseline vs. memory-adapter)
        │
        ▼
-2. Annotate staleness (hindsight)
+2. Frontier LLM synthesizes
+   structured guidance targets
+   (FORESIGHT_PLAN / FEASIBILITY_CRITERIA /
+    FALLBACK_STRATEGY)
        │
        ▼
-3. Generate adapter target outputs (XML)
+3. Behavioral consensus filtering
+   (filter_sft_targets.py)
        │
        ▼
-4. Format as SFT examples
+4. (optional) Paraphrase instructions
        │
        ▼
-5. Build HuggingFace Dataset
+5. MemGuide — curated SFT targets
 ```
 
-## Step 1 — Record Episodes
+## Step 1 — Record Benchmark Runs
 
-Run any benchmark with `--record_memory` to save memory snapshots:
+Filtering compares two planners — an **expert** (`InternVL3_5-38B`) and a **novice**
+(`InternVL3_5-14B`) — each run **twice** per task: once without the adapter target
+(`*_baseline`) and once with it (`*_memory_adapter`). Enable training-record logging via
+the `memory_experiment` block:
 
-```bash
-python embodiedbench/main.py \
-    --config embodiedbench/configs/eb-alf.yaml \
-    --record_memory \
-    --episodes_output_dir data/episodes/eb_alfred
+```yaml
+# embodiedbench/configs/config.yaml (or CLI override)
+memory_experiment:
+  mode: adapted_planner_critic
+  save_training_records: true
+  log_dir: "./alfred_memory_logs"
 ```
 
-Each episode is saved as `episodes/<episode_id>.json` containing:
-- `steps[]` — list of (observation, action, memory_snapshot, success) tuples
-- `task_instruction` — natural-language task string
-- `final_success` — bool
+This produces, per domain folder (e.g. `alfred_memory_logs/`):
 
-## Step 2 — Build the Training Dataset
-
-```bash
-python embodiedbench/scripts/build_preference_dataset.py \
-    --episodes_dir data/episodes/eb_alfred \
-    --output_dir   data/memory_adapter_training/eb_alfred \
-    --split_ratio  0.9
+```
+alfred_memory_logs/
+├── training_records_38B.jsonl                 # adapter targets (expert outcome)
+├── training_records_14B.jsonl                 # adapter targets (novice outcome)
+├── InternVL3_5-38B_baseline/<cat>/results/episode_*_final_res.json
+├── InternVL3_5-38B_memory_adapter/<cat>/results/episode_*_final_res.json
+├── InternVL3_5-14B_baseline/<cat>/results/episode_*_final_res.json
+└── InternVL3_5-14B_memory_adapter/<cat>/results/episode_*_final_res.json
 ```
 
-This script performs hindsight staleness annotation and formats the annotated episodes
-into SFT training examples.  The script is named `build_preference_dataset.py` because
-it also supports optional preference-pair generation for DPO/ORPO training; for
-standard two-stage training (SFT → GRPO), the default output format is plain SFT.
-
-This creates:
-```
-data/memory_adapter_training/eb_alfred/
-├── train.jsonl   # ~90 % of episodes
-├── val.jsonl     # ~10 % of episodes
-└── metadata.json
-```
-
-Each `.jsonl` line is a JSON object.  In SFT mode the `target` field contains the
-expert-generated adapter output; in preference mode, `chosen`/`rejected` fields are
-populated for DPO/ORPO training:
+Each `training_records_*.jsonl` line pairs a task instruction and its retrieved memory
+with the frontier-LLM guidance target:
 
 ```json
 {
-  "prompt": "<system>...<user>Task: ...\nMemory: ...</user>",
-  "target": "<FORESIGHT_PLAN>...</FORESIGHT_PLAN>\n<FEASIBILITY_CRITERIA>...</FEASIBILITY_CRITERIA>\n<FALLBACK_STRATEGY>...</FALLBACK_STRATEGY>",
-  "chosen": "<FORESIGHT_PLAN>...</FORESIGHT_PLAN>...",
-  "rejected": "<FORESIGHT_PLAN>[verbatim stale memory]</FORESIGHT_PLAN>..."
+  "instruction": "Pick up the mug and place it on the shelf.",
+  "retrieved_memory": "[Spatial] mug last seen on table ...",
+  "planner_prompt": "...",
+  "adapter_target": {
+    "foresight_plan": ["...", "..."],
+    "feasibility_criteria": ["..."],
+    "fallback_strategy": ["..."]
+  },
+  "outcome": {"success": true, "progress": 1.0, "steps": 12, "replans": 0}
 }
 ```
 
-## Data Statistics (expected)
+## Step 2 — Behavioral Consensus Filtering
 
-| Split | ALFRED | Habitat |
-|---|---|---|
-| Train | ~8 000 | ~4 000 |
-| Val | ~900 | ~450 |
+`filter_sft_targets.py` keeps only targets that **do not degrade** task progress for
+**either** planner. A target is removed when, for the expert and/or the novice,
+
+```
+progress_with_adapter < progress_without_adapter − tolerance
+```
+
+```bash
+python -m embodiedbench.memory_adapter_training.filter_sft_targets \
+    --dataset-root memory_adapter_dataset \
+    --output-dir   memory_adapter_dataset/sft_filtered \
+    --tolerance    0.0
+```
+
+For each domain this writes:
+
+```
+<domain>/sft_filtered/
+├── sft_targets_filtered.jsonl   # kept targets → SFT training set
+└── removed_targets.jsonl        # rejected targets (for inspection)
+```
+
+The kept `sft_targets_filtered.jsonl` files are the direct input to
+[sft_training.md](sft_training.md).
+
+## Step 3 — (Optional) Paraphrase Instructions
+
+`paraphrase_instructions.py` rewrites each task instruction with a frontier LLM to
+increase linguistic diversity without altering task semantics:
+
+```bash
+python embodiedbench/scripts/paraphrase_instructions.py \
+    --root    MemGuide \
+    --model   gpt-5.5 \
+    --api_key $OPENAI_API_KEY
+```
+
+## Data Statistics
+
+The released **MemGuide** dataset contains the filtered SFT targets:
+
+| Split   | Environment | Records |
+|---------|-------------|---------|
+| alfred  | EB-ALFRED   | 250     |
+| habitat | EB-Habitat  | 240     |
+
+MemGuide is available on the HuggingFace Hub:
+[NMThuan032k/MemGuide](https://huggingface.co/datasets/NMThuan032k/MemGuide).

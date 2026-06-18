@@ -22,15 +22,18 @@ The adapter produces three structured output sections:
 - `FALLBACK_STRATEGY` — spatially grounded recovery actions for failure cases.
 
 MemAdapter is the sole trainable component in the system and requires **no manual
-annotation**.  Training proceeds in two stages:
+annotation**.  The released model and all reported results come from Stage 1; Stage 2 is
+planned future work.
 
 1. **Supervised Fine-Tuning (SFT)** — a frontier LLM synthesizes expert guidance targets
    from recorded benchmark episodes; behavioral consensus filtering discards targets that
    degrade closed-loop execution; the filtered data is distilled into a compact Qwen3-14B
    adapter via LoRA.
-2. **GRPO Refinement** — optimises the adapter against closed-loop task-execution
-   feedback (task success/progress, format validity, per-section quality) with the
-   planner and critic frozen throughout.
+2. **GRPO Refinement** *(planned, not yet implemented)* — would optimise the adapter
+   against closed-loop task-execution feedback (task success/progress, format validity,
+   per-section quality) with the planner and critic frozen throughout. Code scaffolding
+   exists under `memory_adapter_rl/` but has not been validated; see
+   [grpo_training.md](grpo_training.md).
 
 ## Design Principles
 
@@ -43,4 +46,3 @@ annotation**.  Training proceeds in two stages:
   (feasibility criteria), ensuring internal consistency across both roles.
 - **Modality-agnostic** — compatible with spatial, temporal, episodic, and semantic
   memory.
-- **Reproducible** — fixed seeds, config hashes, and git-commit tracking throughout.
